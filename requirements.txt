@@ -1,19 +1,15 @@
 # Core
-fastapi==0.104.1
-uvicorn==0.24.0
 pydantic==2.5.0
 
-
-# UI
+# Streamlit app
 streamlit==1.61.1
-altair==6.2.2
 pandas
 
-# AI/ML
+# OpenAI
 openai>=1.0.0
 python-dotenv==1.0.0
 
-# Data
+# Database
 sqlalchemy==2.0.0
 psycopg2-binary==2.9.12
 
@@ -34,4 +30,3 @@ isort==5.13.2
 
 # Utils
 python-json-logger==2.0.7
-
