@@ -1,0 +1,178 @@
+{
+  "hanoi": [
+    {
+      "id": "hanoi_act_001",
+      "name": "Hoan Kiem Lake Tour",
+      "city": "Hanoi",
+      "category": "cultural",
+      "duration_minutes": 60,
+      "cost": 0,
+      "currency": "VND",
+      "difficulty": "easy",
+      "rating_score": 4.7,
+      "description": "Walk around the iconic lake and visit Ngoc Son Temple",
+      "best_time": "morning",
+      "requires_booking": false
+    },
+    {
+      "id": "hanoi_act_002",
+      "name": "Water Puppet Show",
+      "city": "Hanoi",
+      "category": "cultural",
+      "duration_minutes": 90,
+      "cost": 75000,
+      "currency": "VND",
+      "difficulty": "easy",
+      "rating_score": 4.8,
+      "description": "Traditional Vietnamese water puppet performance",
+      "best_time": "evening",
+      "requires_booking": true
+    },
+    {
+      "id": "hanoi_act_003",
+      "name": "Hanoi Street Food Tour",
+      "city": "Hanoi",
+      "category": "food",
+      "duration_minutes": 180,
+      "cost": 200000,
+      "currency": "VND",
+      "difficulty": "easy",
+      "rating_score": 4.9,
+      "description": "Guided tour of local street food vendors and markets",
+      "best_time": "evening",
+      "requires_booking": true
+    },
+    {
+      "id": "hanoi_act_004",
+      "name": "Ha Long Bay Day Trip",
+      "city": "Hanoi",
+      "category": "nature",
+      "duration_minutes": 720,
+      "cost": 800000,
+      "currency": "VND",
+      "difficulty": "moderate",
+      "rating_score": 4.6,
+      "description": "Full-day cruise to UNESCO World Heritage site",
+      "best_time": "morning",
+      "requires_booking": true
+    },
+    {
+      "id": "hanoi_act_005",
+      "name": "Old Quarter Walking Tour",
+      "city": "Hanoi",
+      "category": "history",
+      "duration_minutes": 120,
+      "cost": 50000,
+      "currency": "VND",
+      "difficulty": "easy",
+      "rating_score": 4.5,
+      "description": "Explore narrow streets and colonial architecture",
+      "best_time": "morning",
+      "requires_booking": false
+    }
+  ],
+  "danang": [
+    {
+      "id": "danang_act_001",
+      "name": "Marble Mountains Trek",
+      "city": "Da Nang",
+      "category": "adventure",
+      "duration_minutes": 180,
+      "cost": 100000,
+      "currency": "VND",
+      "difficulty": "moderate",
+      "rating_score": 4.6,
+      "description": "Climb five marble-formed mountains with cave temples",
+      "best_time": "morning",
+      "requires_booking": false
+    },
+    {
+      "id": "danang_act_002",
+      "name": "My Khe Beach",
+      "city": "Da Nang",
+      "category": "relaxation",
+      "duration_minutes": 240,
+      "cost": 0,
+      "currency": "VND",
+      "difficulty": "easy",
+      "rating_score": 4.8,
+      "description": "Beautiful pristine beach - great for swimming",
+      "best_time": "morning",
+      "requires_booking": false
+    }
+  ],
+  "paris": [
+    {
+      "id": "paris_act_001",
+      "name": "Eiffel Tower Visit",
+      "city": "Paris",
+      "category": "history",
+      "duration_minutes": 120,
+      "cost": 28,
+      "currency": "EUR",
+      "difficulty": "easy",
+      "rating_score": 4.7,
+      "description": "Visit the iconic Eiffel Tower with summit access",
+      "best_time": "afternoon",
+      "requires_booking": true
+    },
+    {
+      "id": "paris_act_002",
+      "name": "Louvre Museum",
+      "city": "Paris",
+      "category": "art",
+      "duration_minutes": 300,
+      "cost": 17,
+      "currency": "EUR",
+      "difficulty": "moderate",
+      "rating_score": 4.8,
+      "description": "World's largest art museum - Mona Lisa, Venus de Milo",
+      "best_time": "morning",
+      "requires_booking": true
+    },
+    {
+      "id": "paris_act_003",
+      "name": "Seine River Cruise",
+      "city": "Paris",
+      "category": "cultural",
+      "duration_minutes": 75,
+      "cost": 15,
+      "currency": "EUR",
+      "difficulty": "easy",
+      "rating_score": 4.6,
+      "description": "Scenic cruise past Notre-Dame, Pont des Arts",
+      "best_time": "evening",
+      "requires_booking": true
+    }
+  ],
+  "tokyo": [
+    {
+      "id": "tokyo_act_001",
+      "name": "Senso-ji Temple",
+      "city": "Tokyo",
+      "category": "cultural",
+      "duration_minutes": 90,
+      "cost": 0,
+      "currency": "USD",
+      "difficulty": "easy",
+      "rating_score": 4.6,
+      "description": "Ancient Buddhist temple in Asakusa with shopping streets",
+      "best_time": "morning",
+      "requires_booking": false
+    },
+    {
+      "id": "tokyo_act_002",
+      "name": "Shibuya Crossing Experience",
+      "city": "Tokyo",
+      "category": "cultural",
+      "duration_minutes": 120,
+      "cost": 0,
+      "currency": "USD",
+      "difficulty": "easy",
+      "rating_score": 4.8,
+      "description": "Experience world's busiest crossing and Shibuya district",
+      "best_time": "afternoon",
+      "requires_booking": false
+    }
+  ]
+}
