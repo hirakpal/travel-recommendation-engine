@@ -28,3 +28,6 @@ isort==5.13.2
 
 # Utils
 python-json-logger==2.0.7
+
+# UI
+streamlit
