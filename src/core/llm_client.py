@@ -15,7 +15,8 @@ import asyncio
 from typing import Optional, AsyncGenerator
 from datetime import datetime
 import logging
-
+import openai
+from openai import OpenAI, AsyncOpenAI
 logger = logging.getLogger(__name__)
 
 class LLMClient:
@@ -34,7 +35,7 @@ class LLMClient:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "claude-opus-4-6",
+        model: str = "gpt-4o-mini",
         timeout: int = 30,
         max_retries: int = 3
     ):
@@ -47,17 +48,17 @@ class LLMClient:
             timeout: Request timeout in seconds
             max_retries: Max retry attempts
         """
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
-            raise ValueError("ANTHROPIC_API_KEY not found in environment")
+            raise ValueError("OPENAI_API_KEY not found in environment")
         
         self.model = model
         self.timeout = timeout
         self.max_retries = max_retries
         
         # Initialize clients
-        self.client = Anthropic(api_key=self.api_key, timeout=timeout)
-        self.async_client = AsyncAnthropic(api_key=self.api_key, timeout=timeout)
+        self.client = OpenAI(api_key=self.api_key, timeout=timeout)
+        self.async_client = AsyncOpenAI(api_key=self.api_key, timeout=timeout)
         
         # Metrics
         self.total_calls = 0
@@ -144,16 +145,18 @@ class LLMClient:
                 system = [s for s in system if s["cache_control"] is not None]
                 
                 # Make request
-                response = self.client.messages.create(
+                response = self.client.chat.completions.create(
                     model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message},
+                    ],
                     max_tokens=max_tokens,
-                    system=system if system else system_prompt,
-                    messages=messages,
-                    temperature=temperature
+                    temperature=temperature,
                 )
                 
                 # Extract response
-                text = response.content[0].text
+                text = response.choices[0].message.content
                 
                 # Track metrics
                 self._update_metrics(response, use_cache)
@@ -161,13 +164,13 @@ class LLMClient:
                 logger.info(f"✓ LLM call successful")
                 return text
             
-            except anthropic.RateLimitError as e:
+            except openai.RateLimitError as e:
                 wait_time = 2 ** attempt  # Exponential backoff
                 logger.warning(f"Rate limited. Waiting {wait_time}s before retry...")
                 await asyncio.sleep(wait_time)
                 continue
             
-            except anthropic.APIError as e:
+            except openai.APIError as e:
                 logger.error(f"API Error: {e}")
                 if attempt == self.max_retries - 1:
                     raise RuntimeError(f"LLM call failed after {self.max_retries} attempts: {e}")
