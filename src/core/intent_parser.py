@@ -1,7 +1,3 @@
-"""
-Parse travel requests into structured intent.
-"""
-
 import json
 import logging
 from enum import Enum
@@ -34,8 +30,6 @@ class Intent(BaseModel):
 
 
 class IntentParser:
-    """Parse travel requests using the configured LLM client."""
-
     def __init__(self, llm_client):
         self.llm = llm_client
 
@@ -44,46 +38,44 @@ class IntentParser:
         logger.info("User input: %s", user_input)
 
         prompt = f"""
-Parse this travel request into JSON.
+Parse this travel request into valid JSON.
 
 User request:
 {user_input}
 
-Return exactly:
+Return this structure:
 {{
   "intent": "trip_planning",
   "confidence": 0.95,
   "entities": {{
-    "destination": "Vietnam",
-    "check_in_date": "2026-08-08",
-    "check_out_date": "2026-08-16",
-    "budget": 2000,
-    "interests": ["Culture", "Food", "Nature"],
+    "destination": "the destination from the request",
+    "check_in_date": "YYYY-MM-DD",
+    "check_out_date": "YYYY-MM-DD",
+    "budget": 0,
+    "interests": [],
     "dietary": []
   }},
   "requires_clarification": false
 }}
 
 Rules:
-- Dates must use YYYY-MM-DD format.
+- Support any country, city, or destination.
+- Preserve the destination from the user request.
+- Correct obvious spelling mistakes in destination names.
+- Dates must use YYYY-MM-DD.
 - Budget must be a number.
 - interests and dietary must be arrays.
-- Return valid JSON only.
+- Return JSON only.
 """
 
         try:
             response = await self.llm.call(
                 system_prompt=(
-                    "You are a travel intent parser. "
+                    "You are a global travel intent parser. "
                     "Return valid JSON only."
                 ),
                 user_message=prompt,
                 response_format="json",
-            )
-
-            logger.info(
-                "LLM_RESPONSE_TYPE=%s",
-                type(response).__name__,
             )
 
             data = (
@@ -92,8 +84,6 @@ Rules:
                 else response
             )
 
-            logger.info("LLM_PARSED_DATA=%s", data)
-
             intent_value = data.get("intent", "unknown")
 
             try:
@@ -101,7 +91,7 @@ Rules:
             except ValueError:
                 intent_type = IntentType.UNKNOWN
 
-            parsed_intent = Intent(
+            result = Intent(
                 type=intent_type,
                 confidence=float(data.get("confidence", 0)),
                 entities=data.get("entities", {}),
@@ -110,13 +100,11 @@ Rules:
                 ),
             )
 
-            logger.info(
-                "INTENT_PARSE_SUCCESS type=%s entities=%s",
-                type(parsed_intent).__name__,
-                parsed_intent.entities,
-            )
+            logger.info("INTENT_PARSE_SUCCESS")
+            logger.info("Intent type: %s", type(result).__name__)
+            logger.info("Entities: %s", result.entities)
 
-            return parsed_intent
+            return result
 
         except Exception:
             logger.exception("INTENT_PARSE_FAILED")
