@@ -222,7 +222,61 @@ class SupervisorAgent:
     # ==================== HELPER METHODS ====================
     
     async def _parse_intent(self, user_request: str) -> Dict[str, Any]:
-        """Parse user request to extract trip parameters."""
-        # Use intent parser to extract structured data
-        intent = await self.intent_parser.parse(user_request)
-        return intent
+    """Parse user request and convert the Intent model to a dictionary."""
+
+        parsed_intent = await self.intent_parser.parse(user_request)
+        entities = parsed_intent.entities or {}
+        destination = (
+            entities.get("destination")
+            or entities.get("city")
+            or entities.get("location")
+            or ""
+        )
+
+        check_in_date = (
+            entities.get("check_in_date")
+            or entities.get("check_in")
+            or ""
+        )
+
+        check_out_date = (
+            entities.get("check_out_date")
+            or entities.get("check_out")
+            or ""
+        )
+
+        budget = entities.get("budget", 0)
+        try:
+            budget = float(budget)
+        except (TypeError, ValueError):
+            budget = 0.0
+
+        interests = (
+            entities.get("interests")
+            or entities.get("preferences")
+            or []
+        )
+
+        dietary = (
+            entities.get("dietary")
+            or entities.get("dietary_restrictions")
+            or []
+        )
+
+        if isinstance(interests, str):
+            interests = [interests]
+
+        if isinstance(dietary, str):
+            dietary = [dietary]
+
+        return {
+            "destination": destination,
+            "check_in_date": check_in_date,
+            "check_out_date": check_out_date,
+            "budget": budget,
+            "currency": "USD",
+            "interests": interests,
+            "dietary": dietary,
+            "confidence": parsed_intent.confidence,
+            "requires_clarification": parsed_intent.requires_clarification,
+        }
