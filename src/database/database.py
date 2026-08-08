@@ -5,6 +5,9 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from src.database.models import Base
+
+
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "sqlite:///./travel.db",
@@ -28,9 +31,12 @@ SessionLocal = sessionmaker(
     bind=engine,
 )
 
+# Create all database tables, including the trips table.
+Base.metadata.create_all(bind=engine)
+
 
 def get_db():
-    """Yield a database session."""
+    """Yield a database session and close it afterward."""
 
     db = SessionLocal()
 
