@@ -1,7 +1,3 @@
-"""
-Supervisor Agent - Coordinates the travel recommendation agents.
-"""
-
 import logging
 from typing import Any, Dict
 
@@ -17,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class SupervisorAgent:
-    """Coordinate intent parsing, trip creation, and specialized agents."""
+    """Coordinate intent parsing and travel recommendation agents."""
 
     def __init__(self, db: Session, llm_client=None):
         self.db = db
@@ -27,7 +23,6 @@ class SupervisorAgent:
         self.hotel_agent = HotelAgent(db, llm_client)
         self.activities_agent = ActivitiesAgent(db, llm_client)
         self.restaurant_agent = RestaurantAgent(db, llm_client)
-
         self.intent_parser = IntentParser(llm_client)
 
     async def plan_trip(
@@ -36,11 +31,6 @@ class SupervisorAgent:
         user_id: str = "streamlit-user",
     ) -> Dict[str, Any]:
         """Plan a complete trip."""
-
-        logger.info("=" * 70)
-        logger.info("SUPERVISOR: Starting trip planning")
-        logger.info("=" * 70)
-        logger.info("User request: %s", user_request)
 
         intent = await self._parse_intent(user_request)
 
@@ -52,7 +42,7 @@ class SupervisorAgent:
         if not destination:
             return {
                 "success": False,
-                "error": "Destination could not be extracted from the request.",
+                "error": "Destination could not be detected.",
             }
 
         if not check_in_date or not check_out_date:
@@ -64,13 +54,8 @@ class SupervisorAgent:
         if budget <= 0:
             return {
                 "success": False,
-                "error": "A valid budget is required.",
+                "error": "Budget must be greater than zero.",
             }
-
-        logger.info("Destination: %s", destination)
-        logger.info("Check-in: %s", check_in_date)
-        logger.info("Check-out: %s", check_out_date)
-        logger.info("Budget: $%s", budget)
 
         trip = self.register.create_trip(
             user_id=user_id,
@@ -78,14 +63,12 @@ class SupervisorAgent:
             check_in_date=check_in_date,
             check_out_date=check_out_date,
             budget_total=budget,
-            currency=intent.get("currency", "USD"),
-            interests=intent.get("interests", []),
-            dietary_restrictions=intent.get("dietary", []),
+            currency="USD",
+            interests=intent["interests"],
+            dietary_restrictions=intent["dietary"],
         )
 
         trip_id = trip.id
-
-        logger.info("Trip created: %s", trip_id)
 
         hotel_result = await self.hotel_agent.process(
             trip_id=trip_id,
@@ -95,11 +78,11 @@ class SupervisorAgent:
         if not hotel_result.get("success"):
             return {
                 "success": False,
+                "trip_id": trip_id,
                 "error": (
                     "Hotel booking failed: "
                     f"{hotel_result.get('error', 'Unknown error')}"
                 ),
-                "trip_id": trip_id,
             }
 
         activities_result = await self.activities_agent.process(
@@ -136,11 +119,7 @@ class SupervisorAgent:
         )
 
         itinerary = self.register.build_itinerary(trip_id)
-        final_budget = self.register.get_budget_summary(trip_id)
-        audit_logs = self.register.get_audit_logs(
-            trip_id,
-            limit=10,
-        )
+        budget_summary = self.register.get_budget_summary(trip_id)
 
         activities = activities_result.get("activities", [])
         meals = restaurant_result.get("meals", [])
@@ -160,16 +139,18 @@ class SupervisorAgent:
                 "meals": meals,
             },
             "itinerary": itinerary,
+            "budget": budget_summary,
+            "conflicts": conflicts,
             "stats": {
                 "total_activities": len(activities),
                 "total_meals": len(meals),
-                "total_cost": final_budget.get("spent", 0),
-                "budget_remaining": final_budget.get("remaining", 0),
+                "total_cost": budget_summary.get("spent", 0),
+                "budget_remaining": budget_summary.get(
+                    "remaining",
+                    0,
+                ),
                 "conflicts": len(conflicts),
-                "audit_logs": len(audit_logs),
             },
-            "budget": final_budget,
-            "conflicts": conflicts,
             "message": (
                 "Trip planned successfully with "
                 f"{len(activities)} activities and "
@@ -181,7 +162,12 @@ class SupervisorAgent:
         self,
         user_request: str,
     ) -> Dict[str, Any]:
-        """Convert the Pydantic Intent object into a dictionary."""
+        """
+        Convert the Pydantic Intent object into a dictionary.
+
+        This prevents:
+        TypeError: 'Intent' object is not subscriptable
+        """
 
         parsed_intent = await self.intent_parser.parse(user_request)
         entities = parsed_intent.entities or {}
