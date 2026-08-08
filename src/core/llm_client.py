@@ -14,8 +14,6 @@ import json
 import asyncio
 from typing import Optional, AsyncGenerator
 from datetime import datetime
-import anthropic
-from anthropic import Anthropic, AsyncAnthropic
 import logging
 
 logger = logging.getLogger(__name__)
