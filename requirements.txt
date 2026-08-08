@@ -29,8 +29,6 @@ isort==5.13.2
 # Utils
 python-json-logger==2.0.7
 
-streamlit
-
 # UI
 streamlit
 openai>=1.0.0
