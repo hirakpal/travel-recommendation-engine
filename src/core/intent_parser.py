@@ -1,84 +1,93 @@
 """
 Parse user intent from natural language.
-
-Extracts:
-- Intent type (hotel_search, activity_search, etc.)
-- Entities (city, dates, budget)
-- Confidence score
 """
 
-from typing import Optional
-from pydantic import BaseModel
+import json
 from enum import Enum
+from typing import Any, Dict
+
+from pydantic import BaseModel, Field
+
 
 class IntentType(str, Enum):
-    """Types of user intents."""
     HOTEL_SEARCH = "hotel_search"
     ACTIVITY_SEARCH = "activity_search"
     RESTAURANT_SEARCH = "restaurant_search"
     TRIP_PLANNING = "trip_planning"
     UNKNOWN = "unknown"
 
+
 class Entity(BaseModel):
-    """Extracted entity."""
-    type: str  # city, date, budget, etc.
+    type: str
     value: str
-    confidence: float
+    confidence: float = 1.0
+
 
 class Intent(BaseModel):
-    """Parsed user intent."""
     type: IntentType
-    confidence: float  # 0-1
-    entities: dict  # {entity_type: value}
-    requires_clarification: bool
+    confidence: float = 0.0
+    entities: Dict[str, Any] = Field(default_factory=dict)
+    requires_clarification: bool = False
+
 
 class IntentParser:
-    """Parse natural language to structured intent."""
-    
+    """Parse natural-language travel requests using OpenAI."""
+
     def __init__(self, llm_client):
         self.llm = llm_client
-    
+
     async def parse(self, user_input: str) -> Intent:
-        """Parse user input to intent."""
-        
         prompt = f"""
-        Parse this travel request to structured intent.
-        
-        User input: "{user_input}"
-        
-        Extract:
-        1. Intent type: hotel_search, activity_search, restaurant_search, trip_planning
-        2. City/destination
-        3. Dates
-        4. Budget
-        5. Preferences
-        
-        Return JSON:
-        {{
-            "intent": "intent_type",
-            "confidence": 0.0-1.0,
-            "entities": {{
-                "city": "extracted city",
-                "dates": "date range",
-                "budget": "budget amount",
-                "preferences": ["list", "of", "preferences"]
-            }},
-            "requires_clarification": true/false
-        }}
-        """
-        
+Parse this travel request into structured JSON.
+
+User request:
+"{user_input}"
+
+Return exactly this structure:
+{{
+  "intent": "trip_planning",
+  "confidence": 0.95,
+  "entities": {{
+    "destination": "Vietnam",
+    "check_in_date": "2026-08-08",
+    "check_out_date": "2026-08-16",
+    "budget": 2000,
+    "interests": ["Culture", "Food", "Nature"],
+    "dietary": []
+  }},
+  "requires_clarification": false
+}}
+
+Rules:
+- Use ISO dates: YYYY-MM-DD.
+- Return budget as a number.
+- Return interests and dietary as arrays.
+- Use an empty string when a value is unavailable.
+"""
+
         response = await self.llm.call(
-            system_prompt="You parse travel requests.",
+            system_prompt="You are a travel intent parser. Return valid JSON only.",
             user_message=prompt,
-            response_format="json"
+            response_format="json",
         )
-        
-        import json
-        data = json.loads(response)
-        
+
+        if isinstance(response, str):
+            data = json.loads(response)
+        else:
+            data = response
+
+        intent_value = data.get("intent", "unknown")
+
+        try:
+            intent_type = IntentType(intent_value)
+        except ValueError:
+            intent_type = IntentType.UNKNOWN
+
         return Intent(
-            type=IntentType(data.get("intent", "unknown")),
-            confidence=data.get("confidence", 0),
+            type=intent_type,
+            confidence=float(data.get("confidence", 0.0)),
             entities=data.get("entities", {}),
-            requires_clarification=data.get("requires_clarification", False)
+            requires_clarification=bool(
+                data.get("requires_clarification", False)
+            ),
         )
