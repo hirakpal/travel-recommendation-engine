@@ -1,4 +1,5 @@
 import logging
+from datetime import date, datetime
 from typing import Any, Dict
 
 from sqlalchemy.orm import Session
@@ -29,12 +30,27 @@ class SupervisorAgent:
 
         logger.info("SUPERVISOR_INIT_SUCCESS")
 
+    @staticmethod
+    def _to_date(value: Any) -> date:
+        """Convert a date string into a Python date object."""
+
+        if isinstance(value, datetime):
+            return value.date()
+
+        if isinstance(value, date):
+            return value
+
+        if not value:
+            raise ValueError("A valid date is required.")
+
+        return date.fromisoformat(str(value)[:10])
+
     async def plan_trip(
         self,
         user_request: str,
         user_id: str = "streamlit-user",
     ) -> Dict[str, Any]:
-        """Plan a trip for any valid destination."""
+        """Plan a complete trip."""
 
         logger.info("SUPERVISOR_PLAN_TRIP_START")
         logger.info("User request: %s", user_request)
@@ -62,10 +78,7 @@ class SupervisorAgent:
             if not check_in_date or not check_out_date:
                 return {
                     "success": False,
-                    "error": (
-                        "Check-in and check-out dates "
-                        "are required."
-                    ),
+                    "error": "Check-in and check-out dates are required.",
                 }
 
             if budget <= 0:
@@ -92,7 +105,10 @@ class SupervisorAgent:
 
             trip_id = trip.id
 
-            logger.info("CREATE_TRIP_SUCCESS trip_id=%s", trip_id)
+            logger.info(
+                "CREATE_TRIP_SUCCESS trip_id=%s",
+                trip_id,
+            )
 
             logger.info("HOTEL_AGENT_START")
 
@@ -101,7 +117,10 @@ class SupervisorAgent:
                 city=destination,
             )
 
-            logger.info("HOTEL_AGENT_RESULT=%s", hotel_result)
+            logger.info(
+                "HOTEL_AGENT_RESULT=%s",
+                hotel_result,
+            )
 
             if not hotel_result.get("success"):
                 return {
@@ -247,7 +266,7 @@ class SupervisorAgent:
         self,
         user_request: str,
     ) -> Dict[str, Any]:
-        """Convert Intent model to a dictionary."""
+        """Parse and normalize the Intent model."""
 
         parsed_intent = await self.intent_parser.parse(user_request)
 
@@ -265,17 +284,13 @@ class SupervisorAgent:
             or ""
         )
 
-        # Correct only known spelling mistakes.
-        # All other destinations remain unchanged.
         destination_aliases = {
             "veitnam": "Vietnam",
             "viet nam": "Vietnam",
         }
 
-        destination_key = str(destination).strip().lower()
-
         destination = destination_aliases.get(
-            destination_key,
+            str(destination).strip().lower(),
             str(destination).strip(),
         )
 
@@ -302,18 +317,25 @@ class SupervisorAgent:
         except (TypeError, ValueError):
             budget = 0.0
 
+        check_in_value = (
+            entities.get("check_in_date")
+            or entities.get("check_in")
+            or ""
+        )
+
+        check_out_value = (
+            entities.get("check_out_date")
+            or entities.get("check_out")
+            or ""
+        )
+
+        check_in_date = self._to_date(check_in_value)
+        check_out_date = self._to_date(check_out_value)
+
         normalized_intent = {
             "destination": destination,
-            "check_in_date": (
-                entities.get("check_in_date")
-                or entities.get("check_in")
-                or ""
-            ),
-            "check_out_date": (
-                entities.get("check_out_date")
-                or entities.get("check_out")
-                or ""
-            ),
+            "check_in_date": check_in_date,
+            "check_out_date": check_out_date,
             "budget": budget,
             "currency": "USD",
             "interests": interests,
@@ -327,6 +349,10 @@ class SupervisorAgent:
         logger.info(
             "NORMALIZED_INTENT_TYPE=%s",
             type(normalized_intent).__name__,
+        )
+        logger.info(
+            "NORMALIZED_INTENT=%s",
+            normalized_intent,
         )
 
         return normalized_intent
