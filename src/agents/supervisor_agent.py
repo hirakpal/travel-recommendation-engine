@@ -1,423 +1,228 @@
 """
-Supervisor agent for intent routing and conversation management.
-
-Routes user requests to appropriate specialist agents.
-Manages conversation context and multi-turn interactions.
+Supervisor Agent - Orchestrates all specialized agents.
+Coordinates Hotel, Activities, and Restaurant agents.
 """
 
-import json
-from typing import Optional, List
-from datetime import datetime
-from enum import Enum
-from pydantic import BaseModel
+from datetime import datetime, date
+from typing import Dict, Any, Optional, List
+from sqlalchemy.orm import Session
+import logging
 
-from src.core.llm_client import LLMClient
-from src.core.intent_parser import Intent, IntentType
+from src.agents.hotel_agent import HotelAgent
+from src.agents.activities_agent import ActivitiesAgent
+from src.agents.restaurant_agent import RestaurantAgent
+from src.database.trip_register_repository import TripRegisterRepository
+from src.core.intent_parser import IntentParser
 
-class ConversationRole(str, Enum):
-    """Roles in conversation."""
-    USER = "user"
-    ASSISTANT = "assistant"
-    SYSTEM = "system"
+logger = logging.getLogger(__name__)
 
-class ConversationMessage(BaseModel):
-    """Single message in conversation."""
-    role: ConversationRole
-    content: str
-    timestamp: datetime
-    intent: Optional[IntentType] = None
-    entities: Optional[dict] = None
-
-class TripContext(BaseModel):
-    """Context for current trip planning."""
-    destination: Optional[str] = None
-    check_in: Optional[str] = None
-    check_out: Optional[str] = None
-    budget: Optional[float] = None
-    interests: List[str] = []
-    dietary_restrictions: List[str] = []
-    party_size: int = 1
-    status: str = "planning"  # planning, booked, completed
-
-class ConversationContext(BaseModel):
-    """Conversation state and context."""
-    session_id: str
-    user_id: Optional[str] = None
-    created_at: datetime
-    messages: List[ConversationMessage] = []
-    trip: TripContext = TripContext()
-    last_intent: Optional[IntentType] = None
-    agents_used: List[str] = []
-    
-    def add_message(
-        self,
-        role: ConversationRole,
-        content: str,
-        intent: Optional[IntentType] = None,
-        entities: Optional[dict] = None
-    ):
-        """Add message to conversation."""
-        msg = ConversationMessage(
-            role=role,
-            content=content,
-            timestamp=datetime.now(),
-            intent=intent,
-            entities=entities
-        )
-        self.messages.append(msg)
 
 class SupervisorAgent:
     """
-    Supervisor agent for multi-agent orchestration.
+    Supervisor Agent - Orchestrates the multi-agent system.
     
     Responsibilities:
-    - Parse user intent
-    - Route to appropriate agent
-    - Maintain conversation context
-    - Handle multi-turn interactions
-    - Escalate to human when needed
+    1. Parse user intent
+    2. Create/load trip in Master Register
+    3. Route to specialized agents
+    4. Coordinate agent execution
+    5. Compile final results
+    6. Handle errors and conflicts
     """
     
-    def __init__(self, llm_client: LLMClient):
-        self.llm = llm_client
-        self.conversations = {}  # session_id -> ConversationContext
+    def __init__(self, db: Session, llm_client=None):
+        """Initialize supervisor with specialized agents."""
+        self.db = db
+        self.llm_client = llm_client
+        self.register = TripRegisterRepository(db)
+        
+        # Initialize specialized agents
+        self.hotel_agent = HotelAgent(db, llm_client)
+        self.activities_agent = ActivitiesAgent(db, llm_client)
+        self.restaurant_agent = RestaurantAgent(db, llm_client)
+        
+        self.intent_parser = IntentParser(llm_client)
     
-    async def process_input(
-        self,
-        session_id: str,
-        user_input: str,
-        user_id: Optional[str] = None
-    ) -> tuple[str, Optional[str], ConversationContext]:
+    async def plan_trip(self, user_request: str, user_id: str) -> Dict[str, Any]:
         """
-        Process user input and route to appropriate agent.
+        Plan complete trip based on user request.
         
         Args:
-            session_id: Unique conversation ID
-            user_input: Natural language input from user
-            user_id: Optional user identifier
+            user_request: User's natural language request
+            user_id: User identifier
         
         Returns:
-            (response, agent_used, updated_context)
+            Complete trip plan with all bookings
         """
+        logger.info("="*70)
+        logger.info("🎯 SUPERVISOR: Starting trip planning")
+        logger.info("="*70)
+        logger.info(f"User request: {user_request}")
         
-        # Get or create conversation context
-        context = self._get_or_create_context(session_id, user_id)
+        # ==================== STEP 1: PARSE INTENT ====================
         
-        # Add user message
-        context.add_message(ConversationRole.USER, user_input)
+        logger.info("\n1️⃣  PARSING INTENT")
+        logger.info("-" * 70)
         
-        # Parse intent
-        intent_result = await self._parse_intent(user_input, context)
+        intent = await self._parse_intent(user_request)
+        logger.info(f"   Destination: {intent['destination']}")
+        logger.info(f"   Check-in: {intent['check_in_date']}")
+        logger.info(f"   Check-out: {intent['check_out_date']}")
+        logger.info(f"   Budget: ${intent['budget']}")
+        logger.info(f"   Interests: {', '.join(intent.get('interests', []))}")
+        logger.info(f"   Dietary: {', '.join(intent.get('dietary', []))}")
         
-        # Route to appropriate handler
-        if intent_result.type == IntentType.HOTEL_SEARCH:
-            response, agent = await self._handle_hotel_search(user_input, intent_result, context)
+        # ==================== STEP 2: CREATE TRIP IN REGISTER ====================
         
-        elif intent_result.type == IntentType.ACTIVITY_SEARCH:
-            response, agent = await self._handle_activity_search(user_input, intent_result, context)
+        logger.info("\n2️⃣  CREATING TRIP IN MASTER REGISTER")
+        logger.info("-" * 70)
         
-        elif intent_result.type == IntentType.RESTAURANT_SEARCH:
-            response, agent = await self._handle_restaurant_search(user_input, intent_result, context)
+        trip = self.register.create_trip(
+            user_id=user_id,
+            destination=intent['destination'],
+            check_in_date=intent['check_in_date'],
+            check_out_date=intent['check_out_date'],
+            budget_total=intent['budget'],
+            currency=intent.get('currency', 'USD'),
+            interests=intent.get('interests', []),
+            dietary_restrictions=intent.get('dietary', [])
+        )
         
-        elif intent_result.type == IntentType.TRIP_PLANNING:
-            response, agent = await self._handle_trip_planning(user_input, intent_result, context)
+        trip_id = trip.id
+        logger.info(f"   ✅ Trip created: {trip_id}")
+        logger.info(f"   Destination: {trip.destination}")
+        logger.info(f"   Nights: {trip.num_nights}")
+        logger.info(f"   Budget: ${trip.budget_total}")
         
-        elif intent_result.type == IntentType.UNKNOWN:
-            response, agent = await self._handle_clarification(user_input, context)
+        # ==================== STEP 3: ROUTE TO HOTEL AGENT ====================
         
+        logger.info("\n3️⃣  HOTEL AGENT")
+        logger.info("-" * 70)
+        
+        hotel_result = await self.hotel_agent.process(
+            trip_id=trip_id,
+            city=intent['destination']
+        )
+        
+        if not hotel_result['success']:
+            logger.error(f"   ❌ Hotel booking failed: {hotel_result.get('error')}")
+            return {
+                "success": False,
+                "error": f"Hotel booking failed: {hotel_result.get('error')}",
+                "trip_id": trip_id
+            }
+        
+        logger.info(f"   ✅ Hotel booked: {hotel_result['hotel']['name']}")
+        logger.info(f"      Cost: ${hotel_result['hotel']['total_cost']:.2f}")
+        logger.info(f"      Budget remaining: ${hotel_result['budget']['remaining']:.2f}")
+        
+        # ==================== STEP 4: ROUTE TO ACTIVITIES AGENT ====================
+        
+        logger.info("\n4️⃣  ACTIVITIES AGENT")
+        logger.info("-" * 70)
+        
+        activities_result = await self.activities_agent.process(
+            trip_id=trip_id,
+            city=intent['destination']
+        )
+        
+        if not activities_result['success']:
+            logger.warning(f"   ⚠️  Activities booking: {activities_result.get('error')}")
+            activities_result = {"activities": [], "stats": {"total_activities": 0}}
         else:
-            response, agent = await self._handle_out_of_domain(user_input, context)
+            logger.info(f"   ✅ Activities booked: {activities_result['stats']['total_activities']}")
+            logger.info(f"      Cost: ${activities_result['stats']['total_cost']:.2f}")
+            logger.info(f"      Budget remaining: ${activities_result['budget']['remaining']:.2f}")
         
-        # Update context
-        context.add_message(
-            ConversationRole.ASSISTANT,
-            response,
-            intent=intent_result.type,
-            entities=intent_result.entities
-        )
-        context.last_intent = intent_result.type
-        if agent:
-            context.agents_used.append(agent)
+        # ==================== STEP 5: ROUTE TO RESTAURANT AGENT ====================
         
-        # Save conversation
-        self.conversations[session_id] = context
+        logger.info("\n5️⃣  RESTAURANT AGENT")
+        logger.info("-" * 70)
         
-        return response, agent, context
-    
-    async def _parse_intent(
-        self,
-        user_input: str,
-        context: ConversationContext
-    ) -> Intent:
-        """Parse user intent from input."""
-        
-        prompt = f"""
-        Analyze this user input and extract intent.
-        
-        Previous intents: {[str(m.intent) for m in context.messages[-5:] if m.role == ConversationRole.USER]}
-        Current destination: {context.trip.destination}
-        Current budget: {context.trip.budget}
-        
-        User input: "{user_input}"
-        
-        Classify as one of:
-        - hotel_search: Looking for hotels
-        - activity_search: Looking for activities/tours
-        - restaurant_search: Looking for dining
-        - trip_planning: Planning entire trip
-        - modification: Changing existing booking
-        - inquiry: General question
-        - unknown: Unclear intent
-        
-        Extract entities:
-        - city/destination
-        - dates (check-in, check-out)
-        - budget
-        - interests
-        - dietary restrictions
-        
-        Return JSON:
-        {{
-            "intent": "intent_type",
-            "confidence": 0.0-1.0,
-            "entities": {{"key": "value"}},
-            "reasoning": "brief explanation"
-        }}
-        """
-        
-        response = await self.llm.call(
-            system_prompt="You are an intent classifier for travel planning.",
-            user_message=prompt,
-            response_format="json"
+        restaurant_result = await self.restaurant_agent.process(
+            trip_id=trip_id,
+            city=intent['destination']
         )
         
-        try:
-            data = json.loads(response)
-            
-            # Update context with extracted entities
-            entities = data.get("entities", {})
-            if "city" in entities:
-                context.trip.destination = entities["city"]
-            if "budget" in entities:
-                try:
-                    context.trip.budget = float(entities["budget"])
-                except:
-                    pass
-            if "check_in" in entities:
-                context.trip.check_in = entities["check_in"]
-            if "check_out" in entities:
-                context.trip.check_out = entities["check_out"]
-            if "interests" in entities:
-                context.trip.interests = entities.get("interests", [])
-            if "dietary" in entities:
-                context.trip.dietary_restrictions = entities.get("dietary", [])
-            
-            # Map to IntentType
-            intent_str = data.get("intent", "unknown").upper()
-            intent_type = IntentType(intent_str.lower()) if intent_str.lower() in [i.value for i in IntentType] else IntentType.UNKNOWN
-            
-            return Intent(
-                type=intent_type,
-                confidence=data.get("confidence", 0),
-                entities=entities,
-                requires_clarification=data.get("confidence", 1) < 0.6
-            )
+        if not restaurant_result['success']:
+            logger.warning(f"   ⚠️  Restaurant booking: {restaurant_result.get('error')}")
+            restaurant_result = {"meals": [], "stats": {"total_meals": 0}}
+        else:
+            logger.info(f"   ✅ Meals booked: {restaurant_result['stats']['total_meals']}")
+            logger.info(f"      Cost: ${restaurant_result['stats']['total_cost']:.2f}")
+            logger.info(f"      Budget remaining: ${restaurant_result['budget']['remaining']:.2f}")
         
-        except Exception as e:
-            print(f"Intent parsing error: {e}")
-            return Intent(
-                type=IntentType.UNKNOWN,
-                confidence=0,
-                entities={},
-                requires_clarification=True
-            )
+        # ==================== STEP 6: CHECK FOR CONFLICTS ====================
+        
+        logger.info("\n6️⃣  CONFLICT DETECTION")
+        logger.info("-" * 70)
+        
+        conflicts = self.register.get_conflicts(trip_id, resolved=False)
+        if conflicts:
+            logger.warning(f"   ⚠️  {len(conflicts)} conflicts detected:")
+            for conflict in conflicts:
+                logger.warning(f"      {conflict.description}")
+        else:
+            logger.info(f"   ✅ No conflicts detected")
+        
+        # ==================== STEP 7: BUILD FINAL ITINERARY ====================
+        
+        logger.info("\n7️⃣  BUILDING ITINERARY")
+        logger.info("-" * 70)
+        
+        itinerary = self.register.build_itinerary(trip_id)
+        logger.info(f"   ✅ Itinerary built: {len(itinerary)} items")
+        
+        # ==================== STEP 8: COMPILE RESULTS ====================
+        
+        logger.info("\n8️⃣  COMPILING RESULTS")
+        logger.info("-" * 70)
+        
+        final_budget = self.register.get_budget_summary(trip_id)
+        audit_logs = self.register.get_audit_logs(trip_id, limit=10)
+        
+        logger.info(f"   Final budget: ${final_budget['spent']:.2f} / ${final_budget['total']:.2f}")
+        logger.info(f"   Remaining: ${final_budget['remaining']:.2f}")
+        logger.info(f"   Breakdown: {final_budget['breakdown']}")
+        logger.info(f"   Audit logs: {len(audit_logs)}")
+        
+        # ==================== RETURN COMPLETE TRIP PLAN ====================
+        
+        result = {
+            "success": True,
+            "trip_id": trip_id,
+            "trip": {
+                "destination": trip.destination,
+                "check_in": str(trip.check_in_date),
+                "check_out": str(trip.check_out_date),
+                "nights": trip.num_nights
+            },
+            "bookings": {
+                "hotel": hotel_result.get('hotel'),
+                "activities": activities_result.get('activities', []),
+                "meals": restaurant_result.get('meals', [])
+            },
+            "stats": {
+                "total_activities": len(activities_result.get('activities', [])),
+                "total_meals": len(restaurant_result.get('meals', [])),
+                "total_cost": final_budget['spent'],
+                "budget_remaining": final_budget['remaining'],
+                "conflicts": len(conflicts)
+            },
+            "budget": final_budget,
+            "message": f"✅ Trip planned successfully! Booked {len(activities_result.get('activities', []))} activities and {len(restaurant_result.get('meals', []))} meals with no conflicts."
+        }
+        
+        logger.info("\n" + "="*70)
+        logger.info("✅ TRIP PLANNING COMPLETE")
+        logger.info("="*70)
+        
+        return result
     
-    async def _handle_hotel_search(
-        self,
-        user_input: str,
-        intent: Intent,
-        context: ConversationContext
-    ) -> tuple[str, str]:
-        """Handle hotel search request."""
-        
-        if not context.trip.destination:
-            return "I'd like to help you find a hotel. Which city are you visiting?", None
-        
-        if not context.trip.check_in:
-            return "What are your check-in and check-out dates?", None
-        
-        # Would call HotelAgent here
-        response = f"""
-        I'll search for hotels in {context.trip.destination}.
-        
-        Search criteria:
-        - Check-in: {context.trip.check_in}
-        - Check-out: {context.trip.check_out}
-        - Budget: ${context.trip.budget if context.trip.budget else 'flexible'}
-        
-        (Hotel Agent would process this search)
-        """
-        
-        return response, "HotelAgent"
+    # ==================== HELPER METHODS ====================
     
-    async def _handle_activity_search(
-        self,
-        user_input: str,
-        intent: Intent,
-        context: ConversationContext
-    ) -> tuple[str, str]:
-        """Handle activity search request."""
-        
-        if not context.trip.destination:
-            return "Which city would you like to explore?", None
-        
-        if not context.trip.interests:
-            return "What interests you? (e.g., history, culture, food, nature, adventure)", None
-        
-        response = f"""
-        I'll find activities in {context.trip.destination} matching your interests: {', '.join(context.trip.interests)}.
-        
-        (Activities Agent would process this search)
-        """
-        
-        return response, "ActivitiesAgent"
-    
-    async def _handle_restaurant_search(
-        self,
-        user_input: str,
-        intent: Intent,
-        context: ConversationContext
-    ) -> tuple[str, str]:
-        """Handle restaurant search request."""
-        
-        if not context.trip.destination:
-            return "Which city are you dining in?", None
-        
-        # Extract meal type from input
-        meal_type = "dinner"
-        if "breakfast" in user_input.lower():
-            meal_type = "breakfast"
-        elif "lunch" in user_input.lower():
-            meal_type = "lunch"
-        
-        response = f"""
-        I'll find restaurants in {context.trip.destination} for {meal_type}.
-        
-        Dietary restrictions: {', '.join(context.trip.dietary_restrictions) if context.trip.dietary_restrictions else 'None'}
-        
-        (Restaurant Agent would process this search)
-        """
-        
-        return response, "RestaurantAgent"
-    
-    async def _handle_trip_planning(
-        self,
-        user_input: str,
-        intent: Intent,
-        context: ConversationContext
-    ) -> tuple[str, str]:
-        """Handle complete trip planning."""
-        
-        # Gather required information
-        missing = []
-        if not context.trip.destination:
-            missing.append("destination")
-        if not context.trip.check_in:
-            missing.append("check-in date")
-        if not context.trip.check_out:
-            missing.append("check-out date")
-        if not context.trip.interests:
-            missing.append("interests")
-        
-        if missing:
-            return f"To plan your trip, I need: {', '.join(missing)}", None
-        
-        response = f"""
-        Great! I'll plan your {context.trip.destination} trip:
-        
-        Trip Details:
-        - Destination: {context.trip.destination}
-        - Duration: {context.trip.check_in} to {context.trip.check_out}
-        - Interests: {', '.join(context.trip.interests)}
-        - Budget: ${context.trip.budget if context.trip.budget else 'flexible'}
-        - Party size: {context.trip.party_size}
-        
-        I'll coordinate hotels, activities, and restaurants for you.
-        (Orchestrator would run all agents)
-        """
-        
-        return response, "Orchestrator"
-    
-    async def _handle_clarification(
-        self,
-        user_input: str,
-        context: ConversationContext
-    ) -> tuple[str, str]:
-        """Handle unclear input."""
-        
-        prompt = f"""
-        The user input is unclear. Ask for clarification.
-        
-        Recent conversation:
-        {self._format_conversation(context.messages[-5:])}
-        
-        User input: "{user_input}"
-        
-        Ask a clarifying question to understand what they want.
-        """
-        
-        response = await self.llm.call(
-            system_prompt="You help clarify travel planning requests.",
-            user_message=prompt,
-            response_format="text"
-        )
-        
-        return response, None
-    
-    async def _handle_out_of_domain(
-        self,
-        user_input: str,
-        context: ConversationContext
-    ) -> tuple[str, str]:
-        """Handle out-of-domain requests."""
-        
-        return """
-        I'm specialized in travel planning - helping you find hotels, activities, and restaurants.
-        
-        How can I help with your travel plans?
-        """, None
-    
-    def _get_or_create_context(
-        self,
-        session_id: str,
-        user_id: Optional[str] = None
-    ) -> ConversationContext:
-        """Get existing context or create new."""
-        
-        if session_id not in self.conversations:
-            self.conversations[session_id] = ConversationContext(
-                session_id=session_id,
-                user_id=user_id,
-                created_at=datetime.now()
-            )
-        
-        return self.conversations[session_id]
-    
-    def _format_conversation(self, messages: List[ConversationMessage]) -> str:
-        """Format conversation history."""
-        
-        result = []
-        for msg in messages:
-            role = msg.role.value.upper()
-            result.append(f"{role}: {msg.content[:100]}")
-        
-        return "\n".join(result)
-    
-    def get_context(self, session_id: str) -> Optional[ConversationContext]:
-        """Get conversation context."""
-        return self.conversations.get(session_id)
-    
-    def clear_context(self, session_id: str):
-        """Clear conversation context."""
-        if session_id in self.conversations:
-            del self.conversations[session_id]
+    async def _parse_intent(self, user_request: str) -> Dict[str, Any]:
+        """Parse user request to extract trip parameters."""
+        # Use intent parser to extract structured data
+        intent = await self.intent_parser.parse(user_request)
+        return intent
