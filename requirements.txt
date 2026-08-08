@@ -1,13 +1,14 @@
-# Core
-pydantic==2.5.0
-
-# Streamlit app
+# Streamlit application
 streamlit==1.61.1
 pandas
+matplotlib
+
+# Data validation and configuration
+pydantic==2.10.6
+python-dotenv==1.0.0
 
 # OpenAI
-openai>=1.0.0
-python-dotenv==1.0.0
+openai>=2.0.0,<3.0.0
 
 # Database
 sqlalchemy==2.0.0
@@ -17,19 +18,19 @@ psycopg2-binary==2.9.12
 redis==5.0.1
 cachetools==5.3.2
 
+# LangGraph routing
+langgraph==1.2.10
+
 # Testing
 pytest==7.4.3
 pytest-asyncio==0.21.1
 httpx==0.25.2
 
-# Code Quality
+# Code quality
 black==23.12.0
 flake8==6.1.0
 mypy==1.7.1
 isort==5.13.2
 
-# Utils
+# Logging
 python-json-logger==2.0.7
-
-matplotlib
-langgraph>=1.2.9
