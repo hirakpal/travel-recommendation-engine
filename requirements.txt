@@ -31,3 +31,4 @@ python-json-logger==2.0.7
 
 # UI
 streamlit
+openai>=1.0.0
