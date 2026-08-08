@@ -1,201 +1,205 @@
-"""Restaurant recommendation agent with cuisine matching."""
+"""
+Restaurant Agent - Plans and books meals.
+Uses Master Trip Register for dietary & schedule coordination.
+"""
 
-import json
-from typing import List, Optional
+from datetime import datetime, date, timedelta
+from typing import Dict, Any, List
+import logging
+
 from src.agents.base_agent import BaseAgent
-from src.models.restaurant import RestaurantSearch, RestaurantRecommendation, Restaurant
-from src.core.llm_client import LLMClient
-from src.validators.restaurant_validator import RestaurantValidator
-from src.cache.manager import CacheManager
+from src.database.repository import RestaurantRepository
+
+logger = logging.getLogger(__name__)
+
 
 class RestaurantAgent(BaseAgent):
     """
-    Restaurant recommendation agent.
+    Restaurant Agent - Plans meals.
     
-    Features:
-    - Cuisine preference matching
-    - Dietary restriction handling
-    - Price-to-quality optimization
-    - Ambiance consideration
-    - Distance optimization
+    Workflow:
+    1. Query Master Register for trip state & dietary restrictions
+    2. Get available budget
+    3. Check existing meal bookings
+    4. Search for restaurants matching dietary needs
+    5. Plan meals for trip duration
+    6. Register each meal with Master Register
+    7. Return meal plan with confirmations
     """
     
-    def __init__(
-        self,
-        llm_client: LLMClient,
-        validator: RestaurantValidator,
-        cache: Optional[CacheManager] = None,
-        restaurants_data_path: str = "data/restaurants.json"
-    ):
-        super().__init__("RestaurantAgent")
-        self.llm = llm_client
-        self.validator = validator
-        self.cache = cache
-        self.restaurants_db = self._load_database(restaurants_data_path)
-    
-    def _load_database(self, path: str) -> dict:
-        """Load restaurants database."""
-        try:
-            with open(path, 'r') as f:
-                return json.load(f)
-        except FileNotFoundError:
-            print(f"Warning: Restaurants database not found at {path}")
-            return {}
-    
-    async def process(
-        self,
-        request: RestaurantSearch
-    ) -> List[RestaurantRecommendation]:
-        """Process restaurant search request."""
+    async def process(self, trip_id: str, city: str = None, **kwargs) -> Dict[str, Any]:
+        """
+        Process meal planning request.
         
-        # STEP 1: Validate
-        if not await self.validate(request):
-            raise ValueError(f"Invalid restaurant search: {request}")
+        Args:
+            trip_id: Trip ID
+            city: City for restaurants
+            **kwargs: Additional parameters
         
-        # STEP 2: Cache check
-        cache_key = self._make_cache_key(request)
-        if self.cache:
-            cached = await self.cache.get(cache_key)
-            if cached:
-                return cached
+        Returns:
+            Dict with meal plan and bookings
+        """
+        logger.info(f"🍜 RESTAURANT AGENT: Planning meals for trip {trip_id}")
         
-        # STEP 3: Filter by cuisine and dietary
-        candidates = self._filter_restaurants(request)
+        # ==================== STEP 1: QUERY REGISTER ====================
         
-        if not candidates:
-            print(f"⚠️  No restaurants match criteria")
-            return []
+        trip_state = self.get_trip_state(trip_id)
+        if not trip_state:
+            return {"success": False, "error": "Trip not found"}
         
-        # STEP 4: Score with Claude
-        recommendations = await self._score_with_claude(request, candidates)
+        city = city or trip_state["destination"]
+        logger.info(f"   City: {city}")
+        logger.info(f"   Duration: {trip_state['nights']} nights")
         
-        # STEP 5: Cache
-        if self.cache:
-            await self.cache.set(cache_key, recommendations, ttl=3600)
+        # ==================== STEP 2: GET DIETARY RESTRICTIONS ====================
         
-        return recommendations
-    
-    async def validate(self, request: RestaurantSearch) -> bool:
-        """Validate restaurant search."""
-        return await self.validator.validate(request)
-    
-    def _make_cache_key(self, request: RestaurantSearch) -> str:
-        """Create cache key."""
-        cuisines_str = "_".join(sorted(request.cuisine_preferences))
-        return f"restaurants:{request.city.lower()}:{request.date}:{request.meal_type}:{cuisines_str}"
-    
-    def _filter_restaurants(self, request: RestaurantSearch) -> List[Restaurant]:
-        """Filter restaurants by criteria."""
+        dietary_restrictions = trip_state.get('dietary', [])
+        logger.info(f"   Dietary restrictions: {', '.join(dietary_restrictions) if dietary_restrictions else 'None'}")
         
-        results = []
-        restaurants_in_city = self.restaurants_db.get(request.city.lower(), [])
+        # ==================== STEP 3: GET BUDGET ====================
         
-        for restaurant_data in restaurants_in_city:
-            try:
-                restaurant = Restaurant(**restaurant_data)
-            except Exception as e:
-                continue
-            
-            # Budget check
-            if not (request.budget_min <= restaurant.price_level * 50 <= request.budget_max):
-                continue
-            
-            # Cuisine check
-            if request.cuisine_preferences:
-                if not any(c in restaurant.cuisine_type for c in request.cuisine_preferences):
-                    continue
-            
-            # Dietary restrictions
-            if "vegetarian" in request.dietary_restrictions:
-                if not restaurant.vegetarian_options:
-                    continue
-            if "vegan" in request.dietary_restrictions:
-                if not restaurant.vegan_options:
-                    continue
-            
-            results.append(restaurant)
+        budget_info = self.get_budget_info(trip_id)
+        # Allocate 20% of remaining budget for meals
+        meals_budget = budget_info['remaining'] * 0.2
+        logger.info(f"   Meals budget: ${meals_budget:.2f}")
         
-        return results
-    
-    async def _score_with_claude(
-        self,
-        request: RestaurantSearch,
-        candidates: List[Restaurant]
-    ) -> List[RestaurantRecommendation]:
-        """Score restaurants considering all preferences."""
+        # Per-meal budget (3 meals per day)
+        num_meals = trip_state['nights'] * 3
+        budget_per_meal = meals_budget / num_meals if num_meals > 0 else 0
+        logger.info(f"   Budget per meal: ${budget_per_meal:.2f} ({num_meals} meals)")
         
-        system_prompt = """You are a restaurant recommendation expert.
-
-TASK: Score restaurants for meal experience.
-
-SCORING (0-1):
-- Cuisine match: Aligns with preferences
-- Ambiance: Fits desired atmosphere
-- Dietary compliance: Accommodates restrictions
-- Price-value: Good value for money
-- Quality: Rating and reviews
-- Timing: Good for meal type
-
-ANTI-BIAS:
-✓ No anchoring on price/rating
-✓ Consider all dietary needs
-✓ Fair evaluation of all cuisines
-✓ No hallucinated restaurants
-
-RESPONSE FORMAT (JSON):
-[{"id": "str", "score": float, "specialty": ["str"]}]"""
+        if meals_budget <= 0 or budget_per_meal <= 0:
+            logger.warning("   No budget for meals")
+            return {
+                "success": False,
+                "error": "Insufficient budget for meals"
+            }
         
-        restaurants_json = json.dumps(
-            [r.dict() for r in candidates],
-            indent=2
-        )
+        # ==================== STEP 4: CHECK EXISTING MEALS ====================
         
-        user_message = f"""City: {request.city}
-Meal type: {request.meal_type}
-Party size: {request.party_size}
-Cuisine preferences: {request.cuisine_preferences}
-Budget: ${request.budget_min}-${request.budget_max}
-Dietary restrictions: {request.dietary_restrictions}
-Ambiance: {request.ambiance or 'Any'}
-
-Restaurants to evaluate:
-{restaurants_json}
-
-Score each for this specific meal type."""
+        existing_meals = self.get_existing_bookings(trip_id, booking_type="restaurant")
+        logger.info(f"   Existing meal bookings: {len(existing_meals)}")
         
-        response = await self.llm.call(
-            system_prompt=system_prompt,
-            user_message=user_message,
-            response_format="json"
-        )
+        # ==================== STEP 5: SEARCH RESTAURANTS ====================
         
-        try:
-            scores_data = json.loads(response)
-        except json.JSONDecodeError:
-            return []
+        restaurant_repo = RestaurantRepository(self.db)
+        all_restaurants = restaurant_repo.get_by_city(city)
+        logger.info(f"   Found {len(all_restaurants)} restaurants")
         
-        recommendations = []
-        for i, restaurant in enumerate(candidates):
-            if i < len(scores_data):
-                score_data = scores_data[i]
-                rec = RestaurantRecommendation(
-                    restaurant=restaurant,
-                    match_score=score_data.get("score", 0),
-                    reasoning=f"Score: {score_data.get('score', 0)}",
-                    suggested_time=self._suggest_time(request.meal_type),
-                    specialty_recommendations=score_data.get("specialty", []),
-                    booking_link=restaurant.booking_url
-                )
-                recommendations.append(rec)
+        # Filter by dietary needs
+        suitable_restaurants = []
+        for restaurant in all_restaurants:
+            if not dietary_restrictions:
+                # No restrictions, all OK
+                suitable_restaurants.append(restaurant)
+            else:
+                # Check if restaurant has dietary options
+                restaurant_options = restaurant.dietary_options or []
+                if any(diet in restaurant_options for diet in dietary_restrictions):
+                    suitable_restaurants.append(restaurant)
         
-        recommendations.sort(key=lambda x: x.match_score, reverse=True)
-        return recommendations
-    
-    def _suggest_time(self, meal_type: str) -> str:
-        """Suggest time based on meal type."""
-        times = {
-            "breakfast": "7:00-9:00 AM",
-            "lunch": "12:00-2:00 PM",
-            "dinner": "7:00-9:00 PM"
+        logger.info(f"   Suitable restaurants: {len(suitable_restaurants)}")
+        
+        if not suitable_restaurants:
+            logger.warning("   No restaurants match dietary requirements")
+            suitable_restaurants = all_restaurants  # Fallback
+        
+        # Filter by budget
+        affordable = [r for r in suitable_restaurants if (r.average_cost or 0) <= budget_per_meal]
+        logger.info(f"   Affordable restaurants: {len(affordable)}")
+        
+        if not affordable:
+            logger.error("   No affordable restaurants")
+            return {
+                "success": False,
+                "error": "No affordable restaurants found"
+            }
+        
+        # ==================== STEP 6: PLAN MEALS ====================
+        
+        check_in_date = date.fromisoformat(trip_state['check_in'])
+        meal_types = ["breakfast", "lunch", "dinner"]
+        meal_times = {
+            "breakfast": ("07:00", "08:30"),
+            "lunch": ("12:00", "13:30"),
+            "dinner": ("18:00", "19:30")
         }
-        return times.get(meal_type, "18:00")
+        
+        meal_plan = []
+        
+        for day in range(trip_state['nights']):
+            meal_date = check_in_date + timedelta(days=day)
+            
+            for meal_type in meal_types:
+                # Rotate through restaurants
+                restaurant = affordable[len(meal_plan) % len(affordable)]
+                start_time, end_time = meal_times[meal_type]
+                
+                logger.info(f"   Planning: {meal_date} {meal_type}")
+                logger.info(f"      Restaurant: {restaurant.name}")
+                logger.info(f"      Cuisine: {restaurant.cuisine}")
+                logger.info(f"      Cost: ${restaurant.average_cost}")
+                
+                meal_plan.append({
+                    "restaurant": restaurant,
+                    "date": meal_date,
+                    "meal_type": meal_type,
+                    "time_start": start_time,
+                    "time_end": end_time,
+                    "cost": restaurant.average_cost
+                })
+        
+        logger.info(f"   Planned {len(meal_plan)} meals")
+        
+        # ==================== STEP 7: REGISTER MEALS ====================
+        
+        registered_meals = []
+        
+        for meal in meal_plan:
+            restaurant = meal['restaurant']
+            
+            success, message, booking_id = self.register_booking(
+                trip_id=trip_id,
+                booking_type="restaurant",
+                resource_id=restaurant.id,
+                resource_name=restaurant.name,
+                cost=restaurant.average_cost,
+                booking_date=meal['date'],
+                booking_time_start=meal['time_start'],
+                booking_time_end=meal['time_end'],
+                duration_minutes=90
+            )
+            
+            if success:
+                registered_meals.append({
+                    "restaurant": restaurant.name,
+                    "date": str(meal['date']),
+                    "meal_type": meal['meal_type'],
+                    "time": f"{meal['time_start']}-{meal['time_end']}",
+                    "cuisine": restaurant.cuisine,
+                    "cost": restaurant.average_cost,
+                    "booking_id": booking_id,
+                    "confirmation": message.split()[-1]
+                })
+            else:
+                logger.warning(f"   Failed to book meal: {message}")
+        
+        # ==================== STEP 8: RETURN RESULT ====================
+        
+        updated_budget = self.get_budget_info(trip_id)
+        
+        return {
+            "success": True,
+            "meals": registered_meals,
+            "stats": {
+                "total_meals": len(registered_meals),
+                "total_cost": meals_budget if len(registered_meals) > 0 else 0,
+                "meals_budget": meals_budget,
+                "restaurants_used": len(set(m['restaurant'] for m in registered_meals))
+            },
+            "budget": {
+                "spent": updated_budget['spent'],
+                "remaining": updated_budget['remaining'],
+                "percentage": updated_budget['percentage_used']
+            }
+        }
