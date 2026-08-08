@@ -149,5 +149,8 @@ class BaseAgent(ABC):
             return None
         
         full_prompt = f"{prompt}\n\nContext: {context}"
-        response = await self.llm_client.complete(full_prompt)
+        response = await self.llm_client.call(
+            system_prompt="You are a travel recommendation assistant.",
+            user_message=full_prompt,
+        )
         return response
