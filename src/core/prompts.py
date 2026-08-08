@@ -1,3 +1,4 @@
+import json
 """
 System prompts and prompt templates.
 
@@ -272,3 +273,23 @@ BUDGET CHECK (MANDATORY):
 - Selected price: ${selected}
 - Within range? ${min} ≤ ${selected} ≤ ${max}
 """
+def get_agent_prompt(agent_name: str, **kwargs) -> str:
+    """Return the system prompt for an agent."""
+
+    prompts = {
+        "hotel": HOTEL_SYSTEM_PROMPT,
+        "hotelagent": HOTEL_SYSTEM_PROMPT,
+        "activities": ACTIVITIES_SYSTEM_PROMPT,
+        "activitiesagent": ACTIVITIES_SYSTEM_PROMPT,
+        "restaurant": RESTAURANT_SYSTEM_PROMPT,
+        "restaurantagent": RESTAURANT_SYSTEM_PROMPT,
+        "supervisor": SUPERVISOR_SYSTEM_PROMPT,
+        "supervisoragent": SUPERVISOR_SYSTEM_PROMPT,
+    }
+
+    prompt = prompts.get(agent_name.lower())
+
+    if prompt is None:
+        raise ValueError(f"Unknown agent: {agent_name}")
+
+    return prompt.format(**kwargs) if kwargs else prompt
