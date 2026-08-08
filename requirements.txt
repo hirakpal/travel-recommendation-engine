@@ -9,7 +9,7 @@ python-dotenv==1.0.0
 
 # Data
 sqlalchemy==2.0.0
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.12
 
 # Cache
 redis==5.0.1
