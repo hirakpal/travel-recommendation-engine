@@ -32,3 +32,4 @@ isort==5.13.2
 python-json-logger==2.0.7
 
 matplotlib
+langgraph>=1.2.9
