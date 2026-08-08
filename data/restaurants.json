@@ -1,0 +1,115 @@
+{
+  "hanoi": [
+    {
+      "id": "hanoi_rest_001",
+      "name": "Pho Gia Truyen",
+      "city": "Hanoi",
+      "cuisine_type": "vietnamese",
+      "price_level": 1,
+      "rating_score": 4.7,
+      "rating_count": 456,
+      "address": "49 Bat Su St, Hanoi",
+      "specialty_dishes": ["Pho Bo", "Pho Ga", "Banh Mi"],
+      "vegetarian_options": true,
+      "vegan_options": true,
+      "description": "Authentic traditional pho since 1950",
+      "booking_url": "https://example.com/restaurants/hanoi_rest_001"
+    },
+    {
+      "id": "hanoi_rest_002",
+      "name": "Wild Lotus",
+      "city": "Hanoi",
+      "cuisine_type": "vietnamese fusion",
+      "price_level": 3,
+      "rating_score": 4.6,
+      "rating_count": 234,
+      "address": "15 Nguyen Hue St, Hanoi",
+      "specialty_dishes": ["Salmon Rolls", "Grilled Fish", "Vegetable Curry"],
+      "vegetarian_options": true,
+      "vegan_options": true,
+      "description": "Modern Vietnamese cuisine with international influences",
+      "booking_url": "https://example.com/restaurants/hanoi_rest_002"
+    },
+    {
+      "id": "hanoi_rest_003",
+      "name": "Bun Cha Ac Me",
+      "city": "Hanoi",
+      "cuisine_type": "vietnamese",
+      "price_level": 1,
+      "rating_score": 4.5,
+      "rating_count": 312,
+      "address": "3 Hang Than St, Hanoi",
+      "specialty_dishes": ["Bun Cha", "Spring Rolls", "Grilled Pork"],
+      "vegetarian_options": false,
+      "vegan_options": false,
+      "description": "Famous for grilled pork with rice noodles",
+      "booking_url": "https://example.com/restaurants/hanoi_rest_003"
+    }
+  ],
+  "danang": [
+    {
+      "id": "danang_rest_001",
+      "name": "Seafood Palace",
+      "city": "Da Nang",
+      "cuisine_type": "seafood",
+      "price_level": 3,
+      "rating_score": 4.8,
+      "rating_count": 389,
+      "address": "My Khe Beach, Da Nang",
+      "specialty_dishes": ["Grilled Lobster", "Fish Steak", "Shrimp"],
+      "vegetarian_options": true,
+      "vegan_options": false,
+      "description": "Premium seafood restaurant with beach views",
+      "booking_url": "https://example.com/restaurants/danang_rest_001"
+    }
+  ],
+  "paris": [
+    {
+      "id": "paris_rest_001",
+      "name": "Bistro Margot",
+      "city": "Paris",
+      "cuisine_type": "french",
+      "price_level": 3,
+      "rating_score": 4.7,
+      "rating_count": 523,
+      "address": "27 Rue de Turenne, Paris",
+      "specialty_dishes": ["Coq au Vin", "Duck Confit", "Beef Bourguignon"],
+      "vegetarian_options": true,
+      "vegan_options": false,
+      "description": "Classic French bistro cuisine in Le Marais",
+      "booking_url": "https://example.com/restaurants/paris_rest_001"
+    },
+    {
+      "id": "paris_rest_002",
+      "name": "Cafe Lumiere",
+      "city": "Paris",
+      "cuisine_type": "french",
+      "price_level": 2,
+      "rating_score": 4.5,
+      "rating_count": 412,
+      "address": "84 Boulevard Saint-Germain, Paris",
+      "specialty_dishes": ["Crepes", "Quiche", "Croissants"],
+      "vegetarian_options": true,
+      "vegan_options": true,
+      "description": "Charming cafe with pastries and light meals",
+      "booking_url": "https://example.com/restaurants/paris_rest_002"
+    }
+  ],
+  "tokyo": [
+    {
+      "id": "tokyo_rest_001",
+      "name": "Sushi Masahiro",
+      "city": "Tokyo",
+      "cuisine_type": "japanese",
+      "price_level": 4,
+      "rating_score": 4.8,
+      "rating_count": 678,
+      "address": "1-2-3 Ginza, Tokyo",
+      "specialty_dishes": ["Omakase", "Nigiri Sushi", "Sashimi"],
+      "vegetarian_options": true,
+      "vegan_options": false,
+      "description": "Michelin-recommended sushi restaurant",
+      "booking_url": "https://example.com/restaurants/tokyo_rest_001"
+    }
+  ]
+}
