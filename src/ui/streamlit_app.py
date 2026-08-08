@@ -23,8 +23,8 @@ from sqlalchemy.orm import sessionmaker
 
 from src.database.database import get_db, DATABASE_URL
 from src.database.trip_register_repository import TripRegisterRepository
-from src.agents.supervisor_agent import SupervisorAgent
 from src.core.llm_client import LLMClient
+from src.core.langgraph_router import LangGraphTravelRouter
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -208,7 +208,7 @@ def plan_trip_workflow(destination, check_in, check_out, budget, interests, diet
             # Initialize supervisor
             configure_openai_key()
             llm_client = LLMClient()
-            supervisor = SupervisorAgent(db, llm_client)
+            router = LangGraphTravelRouter(db, llm_client)
             
             # Build natural language request
             interests_str = ", ".join(interests)
@@ -246,7 +246,7 @@ def plan_trip_workflow(destination, check_in, check_out, budget, interests, diet
             
             # ==================== RUN SUPERVISOR ====================
             result = asyncio.run(
-                supervisor.plan_trip(natural_request, "streamlit_user")
+                router.ainvoke(natural_request, "streamlit_user")
             )
             
             # ==================== STEP 5-8: FINALIZATION ====================
