@@ -1,3 +1,7 @@
+"""
+Supervisor Agent - Coordinates all travel recommendation agents.
+"""
+
 import logging
 from typing import Any, Dict
 
@@ -16,6 +20,8 @@ class SupervisorAgent:
     """Coordinate intent parsing and travel recommendation agents."""
 
     def __init__(self, db: Session, llm_client=None):
+        logger.info("SUPERVISOR_INIT_START")
+
         self.db = db
         self.llm_client = llm_client
         self.register = TripRegisterRepository(db)
@@ -25,138 +31,218 @@ class SupervisorAgent:
         self.restaurant_agent = RestaurantAgent(db, llm_client)
         self.intent_parser = IntentParser(llm_client)
 
+        logger.info("SUPERVISOR_INIT_SUCCESS")
+
     async def plan_trip(
         self,
         user_request: str,
         user_id: str = "streamlit-user",
     ) -> Dict[str, Any]:
-        """Plan a complete trip."""
+        """Plan a complete trip with transaction logging."""
 
-        intent = await self._parse_intent(user_request)
+        logger.info("=" * 70)
+        logger.info("SUPERVISOR_PLAN_TRIP_START")
+        logger.info("User ID: %s", user_id)
+        logger.info("User request: %s", user_request)
+        logger.info("=" * 70)
 
-        destination = intent["destination"]
-        check_in_date = intent["check_in_date"]
-        check_out_date = intent["check_out_date"]
-        budget = intent["budget"]
+        try:
+            logger.info("STEP_1_INTENT_PARSE_START")
 
-        if not destination:
-            return {
-                "success": False,
-                "error": "Destination could not be detected.",
-            }
+            intent = await self._parse_intent(user_request)
 
-        if not check_in_date or not check_out_date:
-            return {
-                "success": False,
-                "error": "Check-in and check-out dates are required.",
-            }
+            logger.info("STEP_1_INTENT_PARSE_SUCCESS")
+            logger.info("Normalized intent type: %s", type(intent).__name__)
+            logger.info("Normalized intent: %s", intent)
 
-        if budget <= 0:
-            return {
-                "success": False,
-                "error": "Budget must be greater than zero.",
-            }
+            destination = intent["destination"]
+            check_in_date = intent["check_in_date"]
+            check_out_date = intent["check_out_date"]
+            budget = intent["budget"]
 
-        trip = self.register.create_trip(
-            user_id=user_id,
-            destination=destination,
-            check_in_date=check_in_date,
-            check_out_date=check_out_date,
-            budget_total=budget,
-            currency="USD",
-            interests=intent["interests"],
-            dietary_restrictions=intent["dietary"],
-        )
+            if not destination:
+                raise ValueError(
+                    "Destination could not be detected."
+                )
 
-        trip_id = trip.id
+            if not check_in_date or not check_out_date:
+                raise ValueError(
+                    "Check-in and check-out dates are required."
+                )
 
-        hotel_result = await self.hotel_agent.process(
-            trip_id=trip_id,
-            city=destination,
-        )
+            if budget <= 0:
+                raise ValueError(
+                    "Budget must be greater than zero."
+                )
 
-        if not hotel_result.get("success"):
-            return {
-                "success": False,
+            logger.info("STEP_2_CREATE_TRIP_START")
+
+            trip = self.register.create_trip(
+                user_id=user_id,
+                destination=destination,
+                check_in_date=check_in_date,
+                check_out_date=check_out_date,
+                budget_total=budget,
+                currency=intent.get("currency", "USD"),
+                interests=intent.get("interests", []),
+                dietary_restrictions=intent.get("dietary", []),
+            )
+
+            trip_id = trip.id
+
+            logger.info(
+                "STEP_2_CREATE_TRIP_SUCCESS trip_id=%s",
+                trip_id,
+            )
+
+            logger.info("STEP_3_HOTEL_AGENT_START")
+
+            hotel_result = await self.hotel_agent.process(
+                trip_id=trip_id,
+                city=destination,
+            )
+
+            logger.info(
+                "STEP_3_HOTEL_AGENT_RESULT=%s",
+                hotel_result,
+            )
+
+            if not hotel_result.get("success"):
+                return {
+                    "success": False,
+                    "trip_id": trip_id,
+                    "error": (
+                        "Hotel booking failed: "
+                        f"{hotel_result.get('error', 'Unknown error')}"
+                    ),
+                }
+
+            logger.info("STEP_4_ACTIVITIES_AGENT_START")
+
+            activities_result = await self.activities_agent.process(
+                trip_id=trip_id,
+                city=destination,
+            )
+
+            logger.info(
+                "STEP_4_ACTIVITIES_AGENT_RESULT=%s",
+                activities_result,
+            )
+
+            if not activities_result.get("success"):
+                activities_result = {
+                    "activities": [],
+                    "stats": {
+                        "total_activities": 0,
+                        "total_cost": 0,
+                    },
+                }
+
+            logger.info("STEP_5_RESTAURANT_AGENT_START")
+
+            restaurant_result = await self.restaurant_agent.process(
+                trip_id=trip_id,
+                city=destination,
+            )
+
+            logger.info(
+                "STEP_5_RESTAURANT_AGENT_RESULT=%s",
+                restaurant_result,
+            )
+
+            if not restaurant_result.get("success"):
+                restaurant_result = {
+                    "meals": [],
+                    "stats": {
+                        "total_meals": 0,
+                        "total_cost": 0,
+                    },
+                }
+
+            logger.info("STEP_6_CONFLICT_CHECK_START")
+
+            conflicts = self.register.get_conflicts(
+                trip_id,
+                resolved=False,
+            )
+
+            logger.info(
+                "STEP_6_CONFLICT_CHECK_SUCCESS count=%s",
+                len(conflicts),
+            )
+
+            logger.info("STEP_7_BUILD_ITINERARY_START")
+
+            itinerary = self.register.build_itinerary(trip_id)
+
+            logger.info(
+                "STEP_7_BUILD_ITINERARY_SUCCESS count=%s",
+                len(itinerary),
+            )
+
+            logger.info("STEP_8_BUDGET_SUMMARY_START")
+
+            budget_summary = self.register.get_budget_summary(trip_id)
+
+            logger.info(
+                "STEP_8_BUDGET_SUMMARY_SUCCESS=%s",
+                budget_summary,
+            )
+
+            activities = activities_result.get("activities", [])
+            meals = restaurant_result.get("meals", [])
+
+            result = {
+                "success": True,
                 "trip_id": trip_id,
-                "error": (
-                    "Hotel booking failed: "
-                    f"{hotel_result.get('error', 'Unknown error')}"
+                "trip": {
+                    "destination": trip.destination,
+                    "check_in": str(trip.check_in_date),
+                    "check_out": str(trip.check_out_date),
+                    "nights": trip.num_nights,
+                },
+                "bookings": {
+                    "hotel": hotel_result.get("hotel"),
+                    "activities": activities,
+                    "meals": meals,
+                },
+                "itinerary": itinerary,
+                "budget": budget_summary,
+                "conflicts": conflicts,
+                "stats": {
+                    "total_activities": len(activities),
+                    "total_meals": len(meals),
+                    "total_cost": budget_summary.get(
+                        "spent",
+                        0,
+                    ),
+                    "budget_remaining": budget_summary.get(
+                        "remaining",
+                        0,
+                    ),
+                    "conflicts": len(conflicts),
+                },
+                "message": (
+                    "Trip planned successfully with "
+                    f"{len(activities)} activities and "
+                    f"{len(meals)} meals."
                 ),
             }
 
-        activities_result = await self.activities_agent.process(
-            trip_id=trip_id,
-            city=destination,
-        )
+            logger.info("SUPERVISOR_PLAN_TRIP_SUCCESS")
+            logger.info("Trip ID: %s", trip_id)
 
-        if not activities_result.get("success"):
-            activities_result = {
-                "activities": [],
-                "stats": {
-                    "total_activities": 0,
-                    "total_cost": 0,
-                },
+            return result
+
+        except Exception as exc:
+            logger.exception("SUPERVISOR_PLAN_TRIP_FAILED")
+            logger.error("Exception type: %s", type(exc).__name__)
+            logger.error("Exception message: %s", str(exc))
+
+            return {
+                "success": False,
+                "error": f"{type(exc).__name__}: {exc}",
             }
-
-        restaurant_result = await self.restaurant_agent.process(
-            trip_id=trip_id,
-            city=destination,
-        )
-
-        if not restaurant_result.get("success"):
-            restaurant_result = {
-                "meals": [],
-                "stats": {
-                    "total_meals": 0,
-                    "total_cost": 0,
-                },
-            }
-
-        conflicts = self.register.get_conflicts(
-            trip_id,
-            resolved=False,
-        )
-
-        itinerary = self.register.build_itinerary(trip_id)
-        budget_summary = self.register.get_budget_summary(trip_id)
-
-        activities = activities_result.get("activities", [])
-        meals = restaurant_result.get("meals", [])
-
-        return {
-            "success": True,
-            "trip_id": trip_id,
-            "trip": {
-                "destination": trip.destination,
-                "check_in": str(trip.check_in_date),
-                "check_out": str(trip.check_out_date),
-                "nights": trip.num_nights,
-            },
-            "bookings": {
-                "hotel": hotel_result.get("hotel"),
-                "activities": activities,
-                "meals": meals,
-            },
-            "itinerary": itinerary,
-            "budget": budget_summary,
-            "conflicts": conflicts,
-            "stats": {
-                "total_activities": len(activities),
-                "total_meals": len(meals),
-                "total_cost": budget_summary.get("spent", 0),
-                "budget_remaining": budget_summary.get(
-                    "remaining",
-                    0,
-                ),
-                "conflicts": len(conflicts),
-            },
-            "message": (
-                "Trip planned successfully with "
-                f"{len(activities)} activities and "
-                f"{len(meals)} meals."
-            ),
-        }
 
     async def _parse_intent(
         self,
@@ -169,8 +255,23 @@ class SupervisorAgent:
         TypeError: 'Intent' object is not subscriptable
         """
 
+        logger.info("SUPERVISOR_PARSE_INTENT_START")
+
         parsed_intent = await self.intent_parser.parse(user_request)
+
+        logger.info(
+            "RAW_INTENT_TYPE=%s",
+            type(parsed_intent).__name__,
+        )
+        logger.info("RAW_INTENT=%r", parsed_intent)
+
         entities = parsed_intent.entities or {}
+
+        logger.info(
+            "RAW_ENTITIES_TYPE=%s",
+            type(entities).__name__,
+        )
+        logger.info("RAW_ENTITIES=%s", entities)
 
         interests = (
             entities.get("interests")
@@ -195,29 +296,11 @@ class SupervisorAgent:
         except (TypeError, ValueError):
             budget = 0.0
 
-        return {
+        normalized_intent = {
             "destination": (
                 entities.get("destination")
                 or entities.get("city")
                 or entities.get("location")
                 or ""
             ),
-            "check_in_date": (
-                entities.get("check_in_date")
-                or entities.get("check_in")
-                or ""
-            ),
-            "check_out_date": (
-                entities.get("check_out_date")
-                or entities.get("check_out")
-                or ""
-            ),
-            "budget": budget,
-            "currency": "USD",
-            "interests": interests,
-            "dietary": dietary,
-            "confidence": parsed_intent.confidence,
-            "requires_clarification": (
-                parsed_intent.requires_clarification
-            ),
-        }
+            "
