@@ -1,0 +1,149 @@
+{
+  "hanoi": [
+    {
+      "id": "hanoi_001",
+      "name": "Hanoi Nostalgia Hotel",
+      "city": "Hanoi",
+      "star_rating": 4.5,
+      "price_per_night": 5500,
+      "currency": "VND",
+      "amenities": ["WiFi", "Gym", "Restaurant", "Room Service", "Air Conditioning", "Business Center"],
+      "address": "27 Hang Bac, Hanoi",
+      "rating_score": 4.6,
+      "rating_count": 342,
+      "description": "Charming colonial-style hotel in Old Quarter",
+      "is_available": true,
+      "booking_url": "https://example.com/hotels/hanoi_001"
+    },
+    {
+      "id": "hanoi_002",
+      "name": "The Pearl Hanoi",
+      "city": "Hanoi",
+      "star_rating": 5.0,
+      "price_per_night": 8500,
+      "currency": "VND",
+      "amenities": ["WiFi", "Gym", "Pool", "Restaurant", "Spa", "24h Front Desk", "Room Service"],
+      "address": "1 Trang Tien St, Hanoi",
+      "rating_score": 4.8,
+      "rating_count": 521,
+      "description": "Luxury 5-star hotel in central Hanoi",
+      "is_available": true,
+      "booking_url": "https://example.com/hotels/hanoi_002"
+    },
+    {
+      "id": "hanoi_003",
+      "name": "Hanoi View Hotel",
+      "city": "Hanoi",
+      "star_rating": 3.5,
+      "price_per_night": 2500,
+      "currency": "VND",
+      "amenities": ["WiFi", "Restaurant", "Air Conditioning"],
+      "address": "101 Tran Hung Dao, Hanoi",
+      "rating_score": 3.8,
+      "rating_count": 215,
+      "description": "Budget-friendly hotel with city views",
+      "is_available": true,
+      "booking_url": "https://example.com/hotels/hanoi_003"
+    }
+  ],
+  "danang": [
+    {
+      "id": "danang_001",
+      "name": "Fusion Maia Resort",
+      "city": "Da Nang",
+      "star_rating": 5.0,
+      "price_per_night": 7500,
+      "currency": "VND",
+      "amenities": ["WiFi", "Pool", "Spa", "Restaurant", "Beach Access", "Gym"],
+      "address": "Tan Ky Hamlet, Da Nang",
+      "rating_score": 4.7,
+      "rating_count": 432,
+      "description": "All-inclusive beach resort with world-class amenities",
+      "is_available": true,
+      "booking_url": "https://example.com/hotels/danang_001"
+    }
+  ],
+  "hochiminh": [
+    {
+      "id": "hcm_001",
+      "name": "Bitexco Legend Hotel",
+      "city": "Ho Chi Minh City",
+      "star_rating": 4.0,
+      "price_per_night": 4500,
+      "currency": "VND",
+      "amenities": ["WiFi", "Gym", "Restaurant", "Business Center", "24h Front Desk"],
+      "address": "2 Hai Trieu St, HCM",
+      "rating_score": 4.2,
+      "rating_count": 287,
+      "description": "Modern hotel near central market",
+      "is_available": true,
+      "booking_url": "https://example.com/hotels/hcm_001"
+    }
+  ],
+  "paris": [
+    {
+      "id": "paris_001",
+      "name": "Le Marais Boutique",
+      "city": "Paris",
+      "star_rating": 4.0,
+      "price_per_night": 150,
+      "currency": "EUR",
+      "amenities": ["WiFi", "Gym", "Restaurant", "Concierge"],
+      "address": "48 Rue de Turenne, Paris",
+      "rating_score": 4.5,
+      "rating_count": 612,
+      "description": "Charming boutique hotel in Le Marais district",
+      "is_available": true,
+      "booking_url": "https://example.com/hotels/paris_001"
+    },
+    {
+      "id": "paris_002",
+      "name": "Eiffel Tower Palace",
+      "city": "Paris",
+      "star_rating": 5.0,
+      "price_per_night": 350,
+      "currency": "EUR",
+      "amenities": ["WiFi", "Pool", "Spa", "Restaurant", "Bar", "Concierge"],
+      "address": "5 Avenue Anatole France, Paris",
+      "rating_score": 4.8,
+      "rating_count": 890,
+      "description": "Luxury hotel with Eiffel Tower views",
+      "is_available": true,
+      "booking_url": "https://example.com/hotels/paris_002"
+    }
+  ],
+  "tokyo": [
+    {
+      "id": "tokyo_001",
+      "name": "Tokyo Central Hotel",
+      "city": "Tokyo",
+      "star_rating": 4.0,
+      "price_per_night": 180,
+      "currency": "USD",
+      "amenities": ["WiFi", "Gym", "Restaurant", "Business Center"],
+      "address": "1-2-3 Shibuya, Tokyo",
+      "rating_score": 4.3,
+      "rating_count": 523,
+      "description": "Modern hotel in Shibuya district",
+      "is_available": true,
+      "booking_url": "https://example.com/hotels/tokyo_001"
+    }
+  ],
+  "newyork": [
+    {
+      "id": "nyc_001",
+      "name": "Times Square Premier",
+      "city": "New York",
+      "star_rating": 4.5,
+      "price_per_night": 450,
+      "currency": "USD",
+      "amenities": ["WiFi", "Gym", "Restaurant", "Bar", "Concierge"],
+      "address": "1500 Broadway, NYC",
+      "rating_score": 4.4,
+      "rating_count": 1200,
+      "description": "Premier hotel in the heart of Times Square",
+      "is_available": true,
+      "booking_url": "https://example.com/hotels/nyc_001"
+    }
+  ]
+}
