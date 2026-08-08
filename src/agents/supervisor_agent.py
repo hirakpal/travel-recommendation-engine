@@ -32,7 +32,7 @@ class SupervisorAgent:
 
     @staticmethod
     def _to_date(value: Any) -> date:
-        """Convert a date string into a Python date object."""
+        """Convert a string or datetime value into a date."""
 
         if isinstance(value, datetime):
             return value.date()
@@ -65,9 +65,24 @@ class SupervisorAgent:
             logger.info("NORMALIZED_INTENT=%s", intent)
 
             destination = intent["destination"]
-            check_in_date = intent["check_in_date"]
-            check_out_date = intent["check_out_date"]
             budget = intent["budget"]
+
+            # Convert dates here before calling the repository.
+            check_in_date = self._to_date(
+                intent["check_in_date"]
+            )
+            check_out_date = self._to_date(
+                intent["check_out_date"]
+            )
+
+            logger.info(
+                "CONVERTED_DATES check_in=%s type=%s "
+                "check_out=%s type=%s",
+                check_in_date,
+                type(check_in_date).__name__,
+                check_out_date,
+                type(check_out_date).__name__,
+            )
 
             if not destination:
                 return {
@@ -75,10 +90,13 @@ class SupervisorAgent:
                     "error": "Destination could not be detected.",
                 }
 
-            if not check_in_date or not check_out_date:
+            if check_out_date <= check_in_date:
                 return {
                     "success": False,
-                    "error": "Check-in and check-out dates are required.",
+                    "error": (
+                        "Check-out date must be after "
+                        "check-in date."
+                    ),
                 }
 
             if budget <= 0:
@@ -317,20 +335,17 @@ class SupervisorAgent:
         except (TypeError, ValueError):
             budget = 0.0
 
-        check_in_value = (
+        check_in_date = (
             entities.get("check_in_date")
             or entities.get("check_in")
             or ""
         )
 
-        check_out_value = (
+        check_out_date = (
             entities.get("check_out_date")
             or entities.get("check_out")
             or ""
         )
-
-        check_in_date = self._to_date(check_in_value)
-        check_out_date = self._to_date(check_out_value)
 
         normalized_intent = {
             "destination": destination,
