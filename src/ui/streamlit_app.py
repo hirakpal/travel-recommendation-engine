@@ -4,15 +4,14 @@ Streamlit validation dashboard for Travel Recommendation Engine.
 Quick validation UI without frontend setup.
 """
 
-import streamlit as st
 import asyncio
 import json
+import os
+import sys
 from datetime import datetime, timedelta
-import sys
-
-# Add parent to path
 from pathlib import Path
-import sys
+
+import streamlit as st
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -48,45 +47,74 @@ if 'llm_client' not in st.session_state:
 # Sidebar - Configuration
 with st.sidebar:
     st.header("⚙️ Configuration")
-    
-    api_key = st.text_input("Anthropic API Key", type="password", key="api_key")
-    
+
+    api_key = None
+
+    # Read from Streamlit Cloud secrets or environment variables
+    try:
+        api_key = st.secrets.get("OPENAI_API_KEY")
+    except Exception:
+        api_key = None
+
+    api_key = api_key or os.getenv("OPENAI_API_KEY")
+
+    # Allow manual entry when no secret is configured
+    if not api_key:
+        api_key = st.text_input(
+            "OpenAI API Key",
+            type="password",
+            key="api_key",
+        )
+    else:
+        st.success("✅ OpenAI API key loaded")
+
     if st.button("Initialize System", key="init_btn"):
         try:
-            st.session_state.llm_client = LLMClient(api_key=api_key)
+            if not api_key:
+                st.error("❌ OPENAI_API_KEY is missing")
+                st.stop()
+
+            st.session_state.llm_client = LLMClient(
+                api_key=api_key,
+                model="gpt-4o-mini",
+            )
+
             st.session_state.agents = {
                 "hotel": HotelAgent(
                     st.session_state.llm_client,
-                    HotelValidator()
+                    HotelValidator(),
                 ),
                 "activities": ActivitiesAgent(
                     st.session_state.llm_client,
-                    ActivitiesValidator()
+                    ActivitiesValidator(),
                 ),
                 "restaurant": RestaurantAgent(
                     st.session_state.llm_client,
-                    RestaurantValidator()
-                )
+                    RestaurantValidator(),
+                ),
             }
+
             st.success("✅ System initialized successfully!")
-        except Exception as e:
-            st.error(f"❌ Initialization failed: {e}")
-    
+
+        except Exception as error:
+            st.error(f"❌ Initialization failed: {error}")
+
     st.divider()
-    
-    # Show status
+
     st.subheader("System Status")
+
     if st.session_state.llm_client:
         st.success("✅ LLM Client: Connected")
+
         if st.session_state.agents:
-            st.success(f"✅ Agents: {len(st.session_state.agents)} loaded")
-        
-        # Metrics
-        if hasattr(st.session_state.llm_client, 'get_metrics'):
-            metrics = st.session_state.llm_client.get_metrics()
-            st.metric("Total API Calls", metrics['total_calls'])
-            st.metric("Total Tokens", metrics['total_tokens'])
-            st.metric("Total Cost", metrics['total_cost'])
+            st.success(
+                f"✅ Agents: {len(st.session_state.agents)} loaded"
+            )
+
+        metrics = st.session_state.llm_client.get_metrics()
+        st.metric("Total API Calls", metrics["total_calls"])
+        st.metric("Total Tokens", metrics["total_tokens"])
+        st.metric("Total Cost", metrics["total_cost"])
     else:
         st.warning("⚠️ System not initialized")
 
