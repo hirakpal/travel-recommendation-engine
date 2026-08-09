@@ -12,6 +12,7 @@ class TripDraft(BaseModel):
     destination: Optional[str] = None
     check_in_date: Optional[date] = None
     check_out_date: Optional[date] = None
+    number_of_nights: Optional[int] = None
     budget: Optional[float] = Field(default=None, gt=0)
     currency: str = "USD"
 
@@ -64,6 +65,14 @@ class TripDraft(BaseModel):
             raise ValueError(
                 "Number of adults cannot exceed number of travelers."
             )
+
+        # Derived data is always calculated in Python from the two dates.
+        if self.check_in_date is not None and self.check_out_date is not None:
+            self.number_of_nights = (
+                self.check_out_date - self.check_in_date
+            ).days
+        else:
+            self.number_of_nights = None
 
         return self
 
