@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from src.core.trip_draft import TripDraft
 
 logger = logging.getLogger(__name__)
+logger.info("ANITA_SOURCE_VERSION=DATE_CONFIRMATION_V3")
 
 
 class AnitaExtraction(BaseModel):
@@ -54,6 +55,7 @@ class AskAnita:
         """Apply one user message and return the updated draft and reply."""
 
         logger.info("ANITA_MESSAGE_START")
+        logger.info("ANITA_SOURCE_VERSION=DATE_CONFIRMATION_V3")
         logger.info("User message: %s", user_message)
 
         normalized_message = user_message.strip().lower()
@@ -98,6 +100,21 @@ class AskAnita:
                 "'yes' to confirm these dates, 'no' to change them, "
                 "or 'exit' to stop."
             )
+
+        # A partial date is deliberately held until the user supplies a
+        # year. Validate that year before extraction so an old year cannot
+        # fall through to the LLM and overwrite the pending date state.
+        if draft.pending_date_field:
+            year_match = re.fullmatch(
+                r"(?:year\s*)?(\d{4})",
+                normalized_message,
+            )
+            if year_match and int(year_match.group(1)) < date.today().year:
+                return draft, (
+                    f"That year is in the past. Please provide "
+                    f"{date.today().year} or a future year for the "
+                    f"{draft.pending_date_field.replace('_', ' ')}."
+                )
 
         # Count answers are deterministic and must not be delegated to the
         # LLM, because a bare number is otherwise ambiguous.
@@ -424,6 +441,12 @@ class AskAnita:
             )
             if year_match:
                 year = int(year_match.group(1))
+                if year < date.today().year:
+                    return {
+                        "pending_date_field": draft.pending_date_field,
+                        "pending_date_day": draft.pending_date_day,
+                        "pending_date_month": draft.pending_date_month,
+                    }
                 try:
                     parsed = date(
                         year,
@@ -431,7 +454,7 @@ class AskAnita:
                         draft.pending_date_day,
                     )
                 except ValueError:
-                    return draft, (
+                    raise ValueError(
                         "That is not a valid calendar date. "
                         "Please provide a valid year."
                     )
@@ -439,6 +462,11 @@ class AskAnita:
                 updates["pending_date_field"] = None
                 updates["pending_date_day"] = None
                 updates["pending_date_month"] = None
+                logger.info(
+                    "ANITA_DATE_YEAR_ACCEPTED field=%s date=%s",
+                    draft.pending_date_field,
+                    parsed.isoformat(),
+                )
                 return updates
 
         currency_match = re.search(
