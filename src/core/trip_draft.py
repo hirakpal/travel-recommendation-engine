@@ -29,6 +29,10 @@ class TripDraft(BaseModel):
     pending_date_field: Optional[str] = None
     pending_date_day: Optional[int] = None
     pending_date_month: Optional[int] = None
+    pending_date_range_start_day: Optional[int] = None
+    pending_date_range_start_month: Optional[int] = None
+    pending_date_range_end_day: Optional[int] = None
+    pending_date_range_end_month: Optional[int] = None
     date_confirmation_required: bool = False
 
     # Optional agent inputs collected by Anita after mandatory fields.
@@ -120,9 +124,19 @@ class TripDraft(BaseModel):
             # particular, after Anita receives the missing year for a date,
             # pending_date_field/day/month are intentionally set to None.
             if key in {
+                # Explicitly clearing these fields is required when the user
+                # rejects a long-trip date confirmation and wants to start
+                # over.  Do not treat None as "no update" for these fields.
+                "check_in_date",
+                "check_out_date",
+                "date_confirmation_required",
                 "pending_date_field",
                 "pending_date_day",
                 "pending_date_month",
+                "pending_date_range_start_day",
+                "pending_date_range_start_month",
+                "pending_date_range_end_day",
+                "pending_date_range_end_month",
                 "pending_preference_field",
             }:
                 current[key] = value
