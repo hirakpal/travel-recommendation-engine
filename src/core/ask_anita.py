@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from src.core.trip_draft import TripDraft
 
 logger = logging.getLogger(__name__)
-logger.info("ANITA_SOURCE_VERSION=DATE_CONFIRMATION_V4")
+logger.info("ANITA_SOURCE_VERSION=DATE_CONFIRMATION_V5")
 
 
 class AnitaExtraction(BaseModel):
@@ -55,7 +55,7 @@ class AskAnita:
         """Apply one user message and return the updated draft and reply."""
 
         logger.info("ANITA_MESSAGE_START")
-        logger.info("ANITA_SOURCE_VERSION=DATE_CONFIRMATION_V4")
+        logger.info("ANITA_SOURCE_VERSION=DATE_CONFIRMATION_V5")
         logger.info("User message: %s", user_message)
 
         normalized_message = user_message.strip().lower()
@@ -578,6 +578,7 @@ class AskAnita:
             r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
             r"(?:\s+(\d{4}))?\b",
             date_text,
+            flags=re.IGNORECASE,
         )
         logger.info(
             "ANITA_DATE_SCAN input=%r normalized=%r matches=%s",
