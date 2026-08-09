@@ -101,6 +101,18 @@ class TripDraft(BaseModel):
         for key, value in updates.items():
             if key not in current:
                 continue
+
+            # Conversational state must be allowed to clear itself.  In
+            # particular, after Anita receives the missing year for a date,
+            # pending_date_field/day/month are intentionally set to None.
+            if key in {
+                "pending_date_field",
+                "pending_date_day",
+                "pending_date_month",
+            }:
+                current[key] = value
+                continue
+
             if value is None or value == "":
                 continue
             if key in {"travelers", "adults"} and value == 0:
