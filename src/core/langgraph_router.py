@@ -44,6 +44,7 @@ class TravelGraphState(TypedDict, total=False):
     hotel_handoff: Dict[str, Any]
     hotel_missing_fields: list[str]
     hotel_missing_questions: list[str]
+    accommodation_options: list[str]
     error: str
 
 
@@ -70,6 +71,10 @@ class LangGraphTravelRouter:
             self._validate_hotel_handoff,
         )
         builder.add_node("handoff_blocked", self._handoff_blocked)
+        builder.add_node(
+            "request_accommodation_preferences",
+            self._request_accommodation_preferences,
+        )
         builder.add_node("hotel", self._run_hotel)
         builder.add_node("activities", self._run_activities)
         builder.add_node("restaurants", self._run_restaurants)
@@ -105,9 +110,11 @@ class LangGraphTravelRouter:
             {
                 "hotel": "hotel",
                 "blocked": "handoff_blocked",
+                "preferences": "request_accommodation_preferences",
             },
         )
         builder.add_edge("handoff_blocked", END)
+        builder.add_edge("request_accommodation_preferences", END)
 
         builder.add_conditional_edges(
             "hotel",
@@ -365,7 +372,44 @@ class LangGraphTravelRouter:
     ) -> str:
         """Prevent Hotel Agent execution when the handoff is incomplete."""
 
-        return "blocked" if state.get("hotel_missing_fields") else "hotel"
+        if state.get("hotel_missing_fields"):
+            return "blocked"
+        if not state.get("hotel_handoff", {}).get(
+            "accommodation_preferences"
+        ):
+            return "preferences"
+        return "hotel"
+
+    async def _request_accommodation_preferences(
+        self,
+        state: TravelGraphState,
+    ) -> Dict[str, Any]:
+        """Pause for user preferences before hotel recommendations begin."""
+
+        options = HotelHandoff.ACCOMMODATION_OPTIONS
+        message = (
+            "Please select one or more accommodation preferences before I "
+            "show hotel recommendations."
+        )
+        record_event(
+            "Hotel Agent",
+            "accommodation_preferences_required",
+            mode="deterministic",
+            status="waiting_for_user",
+            output_data={"options": options, "message": message},
+            trip_id=state.get("trip_id"),
+        )
+        return {
+            "result": {
+                "success": False,
+                "trip_id": state.get("trip_id"),
+                "requires_user_input": True,
+                "input_type": "multiselect",
+                "field": "accommodation_preferences",
+                "options": options,
+                "message": message,
+            }
+        }
 
     async def _handoff_blocked(
         self,
