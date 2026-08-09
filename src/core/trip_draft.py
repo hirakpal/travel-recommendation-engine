@@ -31,6 +31,10 @@ class TripDraft(BaseModel):
     pending_date_month: Optional[int] = None
     date_confirmation_required: bool = False
 
+    # Optional agent inputs collected by Anita after mandatory fields.
+    pending_preference_field: Optional[str] = None
+    preferences_collected: bool = False
+
     @model_validator(mode="before")
     @classmethod
     def normalize_missing_counts(cls, values: Any) -> Any:
@@ -94,6 +98,7 @@ class TripDraft(BaseModel):
         return (
             not self.missing_required_fields()
             and not self.date_confirmation_required
+            and self.preferences_collected
         )
 
     @property
@@ -118,6 +123,7 @@ class TripDraft(BaseModel):
                 "pending_date_field",
                 "pending_date_day",
                 "pending_date_month",
+                "pending_preference_field",
             }:
                 current[key] = value
                 continue
