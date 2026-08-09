@@ -42,6 +42,10 @@ class AskAnita:
         "pending_date_field",
         "pending_date_day",
         "pending_date_month",
+        "pending_date_range_start_day",
+        "pending_date_range_start_month",
+        "pending_date_range_end_day",
+        "pending_date_range_end_month",
         "date_confirmation_required",
         "pending_preference_field",
         "preferences_collected",
@@ -412,6 +416,17 @@ class AskAnita:
 
         acknowledgements = []
 
+        if draft.pending_date_field == "date_range":
+            return (
+                "I understood the date range from "
+                f"{draft.pending_date_range_start_day}/"
+                f"{draft.pending_date_range_start_month} to "
+                f"{draft.pending_date_range_end_day}/"
+                f"{draft.pending_date_range_end_month}. Which year should "
+                "I use for both dates? Please reply with a four-digit year, "
+                "for example: 2026."
+            )
+
         if draft.pending_date_field:
             month_name = date(
                 2000,
@@ -706,6 +721,46 @@ class AskAnita:
         if destination_match:
             updates["destination"] = destination_match.group(1).strip()
 
+        if draft.pending_date_field == "date_range":
+            year_match = re.fullmatch(
+                r"(?:year\s*)?(\d{4})",
+                lower_text,
+            )
+            if year_match:
+                year = int(year_match.group(1))
+                if year < date.today().year:
+                    return {
+                        "pending_date_field": "date_range",
+                        "pending_date_range_start_day": draft.pending_date_range_start_day,
+                        "pending_date_range_start_month": draft.pending_date_range_start_month,
+                        "pending_date_range_end_day": draft.pending_date_range_end_day,
+                        "pending_date_range_end_month": draft.pending_date_range_end_month,
+                    }
+                try:
+                    start = date(
+                        year,
+                        draft.pending_date_range_start_month,
+                        draft.pending_date_range_start_day,
+                    )
+                    end = date(
+                        year,
+                        draft.pending_date_range_end_month,
+                        draft.pending_date_range_end_day,
+                    )
+                except ValueError as exc:
+                    raise ValueError(
+                        "That is not a valid date range."
+                    ) from exc
+                return {
+                    "check_in_date": start,
+                    "check_out_date": end,
+                    "pending_date_field": None,
+                    "pending_date_range_start_day": None,
+                    "pending_date_range_start_month": None,
+                    "pending_date_range_end_day": None,
+                    "pending_date_range_end_month": None,
+                }
+
         if draft.pending_date_field:
             year_match = re.fullmatch(
                 r"(?:year\s*)?(\d{4})",
@@ -775,6 +830,71 @@ class AskAnita:
             r"\1",
             date_text,
         )
+
+        range_match = re.fullmatch(
+            r"(?:(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|"
+            r"may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|"
+            r"oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})"
+            r"(?:\s+(\d{4}))?\s*(?:-|–|to)\s*"
+            r"(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|"
+            r"may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|"
+            r"oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})"
+            r"(?:\s+(\d{4}))?",
+            date_text,
+            flags=re.IGNORECASE,
+        )
+        if not range_match:
+            range_match = re.fullmatch(
+                r"(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|"
+                r"mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|"
+                r"aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|"
+                r"nov(?:ember)?|dec(?:ember)?)\s+(\d{4})?\s*"
+                r"(?:-|–|to)\s*(\d{1,2})\s+"
+                r"(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|"
+                r"may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|"
+                r"sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|"
+                r"dec(?:ember)?)\s+(\d{4})?",
+                date_text,
+                flags=re.IGNORECASE,
+            )
+
+        if range_match:
+            values = range_match.groups()
+            if values[0].isdigit():
+                start_day, start_month, start_year = values[0], values[1], values[2]
+                end_day, end_month, end_year = values[3], values[4], values[5]
+            else:
+                start_month, start_day, start_year = values[0], values[1], values[2]
+                end_month, end_day, end_year = values[3], values[4], values[5]
+
+            start_month_number = datetime.strptime(
+                start_month[:3].title(), "%b"
+            ).month
+            end_month_number = datetime.strptime(
+                end_month[:3].title(), "%b"
+            ).month
+
+            if start_year and end_year:
+                updates["check_in_date"] = AskAnita._parse_user_date(
+                    start_day, start_month, start_year
+                )
+                updates["check_out_date"] = AskAnita._parse_user_date(
+                    end_day, end_month, end_year
+                )
+                return updates
+
+            updates.update(
+                {
+                    "pending_date_field": "date_range",
+                    "pending_date_range_start_day": int(start_day),
+                    "pending_date_range_start_month": start_month_number,
+                    "pending_date_range_end_day": int(end_day),
+                    "pending_date_range_end_month": end_month_number,
+                    "pending_date_day": None,
+                    "pending_date_month": None,
+                }
+            )
+            return updates
 
         date_matches = re.findall(
             r"\b(\d{1,2})\s+"
