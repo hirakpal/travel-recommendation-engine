@@ -37,6 +37,9 @@ class AskAnita:
         "transport_preferences",
         "accommodation_preferences",
         "notes",
+        "pending_date_field",
+        "pending_date_day",
+        "pending_date_month",
     }
 
     def __init__(self, llm_client):
@@ -138,6 +141,18 @@ class AskAnita:
 
         acknowledgements = []
 
+        if draft.pending_date_field:
+            month_name = date(
+                2000,
+                draft.pending_date_month,
+                draft.pending_date_day,
+            ).strftime("%B")
+            return (
+                f"I understood {month_name} "
+                f"{draft.pending_date_day}. Which year should I use? "
+                "Please reply with a four-digit year, for example: 2026."
+            )
+
         if "check_in_date" in updates:
             acknowledgements.append(
                 f"Check-in set to {draft.check_in_date}."
@@ -215,6 +230,24 @@ class AskAnita:
         lower_text = text.lower()
         updates: Dict[str, Any] = {}
 
+        if draft.pending_date_field:
+            year_match = re.fullmatch(
+                r"(?:year\s*)?(\d{4})",
+                lower_text,
+            )
+            if year_match:
+                year = int(year_match.group(1))
+                parsed = date(
+                    year,
+                    draft.pending_date_month,
+                    draft.pending_date_day,
+                )
+                updates[draft.pending_date_field] = parsed
+                updates["pending_date_field"] = None
+                updates["pending_date_day"] = None
+                updates["pending_date_month"] = None
+                return updates
+
         currency_match = re.search(
             r"(?:inr|usd|eur|gbp|aud|cad|sgd|jpy|\$|€|£)",
             lower_text,
@@ -251,10 +284,31 @@ class AskAnita:
         )
 
         parsed_dates = []
+        incomplete_date = None
         for day, month, year in date_matches:
-            parsed_dates.append(
-                AskAnita._parse_user_date(day, month, year)
+            if not year:
+                incomplete_date = (int(day), month)
+            else:
+                parsed_dates.append(
+                    AskAnita._parse_user_date(day, month, year)
+                )
+
+        if incomplete_date:
+            day, month = incomplete_date
+            field = (
+                "check_in_date"
+                if draft.check_in_date is None
+                else "check_out_date"
             )
+            updates["pending_date_field"] = field
+            updates["pending_date_day"] = day
+            updates["pending_date_month"] = datetime.strptime(
+                month[:3].title(),
+                "%b",
+            ).month
+            updates.pop("check_in_date", None)
+            updates.pop("check_out_date", None)
+            return updates
 
         if len(parsed_dates) >= 2:
             updates["check_in_date"] = parsed_dates[0]
