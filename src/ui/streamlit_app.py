@@ -162,12 +162,12 @@ st.sidebar.info(
     """
     **Travel Recommendation Engine**
     
-    AI-powered trip planning with:
-    - 🏨 Hotel Booking
-    - 🎫 Activity Planning
-    - 🍜 Restaurant Reservations
-    - 📋 Itinerary Generation
-    - 🔍 Conflict Detection
+    AI-powered travel recommendations with:
+    - 🏨 Hotel Recommendations
+    - 🎫 Activity Recommendations
+    - 🍜 Restaurant Recommendations
+    - 📋 Itinerary Suggestions
+    - 🔍 Preference & Conflict Checks
     """
 )
 
