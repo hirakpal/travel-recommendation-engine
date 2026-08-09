@@ -6,7 +6,7 @@ import re
 from datetime import date, datetime
 from typing import Any, Dict, Tuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from src.core.trip_draft import TripDraft
 from src.core.runtime_diagnostics import record_event
@@ -54,6 +54,74 @@ class AskAnita:
 
     def __init__(self, llm_client):
         self.llm = llm_client
+
+    async def _extract_with_repair(
+        self,
+        prompt: str,
+    ) -> AnitaExtraction:
+        """Parse LLM output and request one schema repair when necessary."""
+
+        system_prompt = (
+            "You are Anita, a friendly travel-planning intake assistant. "
+            "Extract trip details only. Never book, purchase, or claim "
+            "that anything is confirmed. Return valid JSON only."
+        )
+        response = await self.llm.call(
+            system_prompt=system_prompt,
+            user_message=prompt,
+            response_format="json",
+        )
+
+        for attempt in range(2):
+            try:
+                data = (
+                    json.loads(response)
+                    if isinstance(response, str)
+                    else response
+                )
+                extraction = AnitaExtraction.model_validate(data)
+                record_event(
+                    "Intent Parser",
+                    "extraction_validated",
+                    mode="llm",
+                    status="success",
+                    output_data=extraction,
+                    details={"attempt": attempt + 1},
+                )
+                return extraction
+            except (json.JSONDecodeError, ValidationError, TypeError) as exc:
+                if attempt == 1:
+                    record_event(
+                        "Intent Parser",
+                        "extraction_validation_failed",
+                        mode="llm",
+                        status="error",
+                        output_data=str(exc),
+                        details={"attempts": 2},
+                    )
+                    raise ValueError(
+                        "The intent parser returned invalid structured data."
+                    ) from exc
+
+                record_event(
+                    "Intent Parser",
+                    "extraction_repair_requested",
+                    mode="llm",
+                    status="retry",
+                    output_data=str(exc),
+                    details={"attempt": attempt + 1},
+                )
+                response = await self.llm.call(
+                    system_prompt=system_prompt,
+                    user_message=(
+                        "Repair your previous response. Return JSON matching "
+                        "this exact shape: {\"updates\": {}, \"reply\": "
+                        "\"\"}. Do not add unknown top-level fields. "
+                        f"Validation error: {exc}\nPrevious response: "
+                        f"{str(response)[:3000]}"
+                    ),
+                    response_format="json",
+                )
 
     async def chat(
         self,
@@ -284,23 +352,7 @@ class AskAnita:
                 input_data=user_message,
                 details={"missing_before": draft.missing_required_fields()},
             )
-            response = await self.llm.call(
-                system_prompt=(
-                    "You are Anita, a friendly travel-planning intake "
-                    "assistant. Extract trip details only. Never book, "
-                    "purchase, or claim that anything is confirmed."
-                ),
-                user_message=prompt,
-                response_format="json",
-            )
-
-            data = (
-                json.loads(response)
-                if isinstance(response, str)
-                else response
-            )
-
-            extraction = AnitaExtraction.model_validate(data)
+            extraction = await self._extract_with_repair(prompt)
             updates = {
                 key: value
                 for key, value in extraction.updates.items()
