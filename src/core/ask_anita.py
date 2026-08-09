@@ -132,6 +132,31 @@ class AskAnita:
                     "date, including month and year."
                 )
 
+        # Dates have priority over counts. In particular, when Anita asks
+        # for the missing year, "2026" must complete the pending date and
+        # must never become a traveler count.
+        try:
+            date_updates = self._extract_deterministic_fields(
+                draft,
+                user_message,
+            )
+        except ValueError:
+            return draft, (
+                "That is not a valid calendar date. Please provide a "
+                "real day and month, for example: 20 August 2026."
+            )
+
+        date_keys = {
+            "check_in_date",
+            "check_out_date",
+            "pending_date_field",
+            "pending_date_day",
+            "pending_date_month",
+        }
+        if date_updates and date_keys.intersection(date_updates):
+            logger.info("ANITA_DATE_DETERMINISTIC_PATH")
+            return self._apply_local_updates(draft, date_updates)
+
         # Count answers are deterministic and must not be delegated to the
         # LLM, because a bare number is otherwise ambiguous.
         count_updates = self._apply_count_answer(
@@ -363,6 +388,12 @@ class AskAnita:
 
         if re.fullmatch(r"\d+", text):
             number = int(text)
+
+            # A four-digit value in the year range is a date year, not a
+            # traveler count. If no date is pending, let the LLM ask for
+            # clarification rather than corrupting the draft.
+            if 1900 <= number <= 2100:
+                return result
 
             if draft.travelers is None:
                 result["travelers"] = number
