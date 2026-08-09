@@ -28,6 +28,7 @@ class TripDraft(BaseModel):
     pending_date_field: Optional[str] = None
     pending_date_day: Optional[int] = None
     pending_date_month: Optional[int] = None
+    date_confirmation_required: bool = False
 
     @model_validator(mode="before")
     @classmethod
@@ -81,7 +82,16 @@ class TripDraft(BaseModel):
 
     @property
     def is_complete(self) -> bool:
-        return not self.missing_required_fields()
+        return (
+            not self.missing_required_fields()
+            and not self.date_confirmation_required
+        )
+
+    @property
+    def duration_days(self) -> Optional[int]:
+        if self.check_in_date is None or self.check_out_date is None:
+            return None
+        return (self.check_out_date - self.check_in_date).days
 
     def merge(self, updates: Dict[str, Any]) -> "TripDraft":
         """Return a validated draft with non-empty updates applied."""
