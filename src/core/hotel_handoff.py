@@ -47,6 +47,16 @@ class HotelHandoff(BaseModel):
         ),
     }
 
+    ACCOMMODATION_OPTIONS: ClassVar[List[str]] = [
+        "Breakfast",
+        "Room size",
+        "Bed size",
+        "Pool",
+        "Wi-Fi",
+        "Early check-in",
+        "Late check-out",
+    ]
+
     @model_validator(mode="after")
     def validate_relationships(self) -> "HotelHandoff":
         """Validate values that are available without guessing missing data."""
