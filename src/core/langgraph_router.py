@@ -43,6 +43,7 @@ class TravelGraphState(TypedDict, total=False):
     result: Dict[str, Any]
     hotel_handoff: Dict[str, Any]
     hotel_missing_fields: list[str]
+    hotel_missing_questions: list[str]
     error: str
 
 
@@ -332,6 +333,7 @@ class LangGraphTravelRouter:
             ),
         )
         missing = handoff.missing_fields()
+        questions = handoff.missing_questions()
         logger.info(
             "HOTEL_HANDOFF_VALIDATION trip_id=%s ready=%s missing=%s",
             state.get("trip_id"),
@@ -346,6 +348,7 @@ class LangGraphTravelRouter:
             input_data=handoff,
             output_data={
                 "missing_fields": missing,
+                "questions": questions,
                 "ready_for_hotel_agent": not missing,
             },
             trip_id=state.get("trip_id"),
@@ -353,6 +356,7 @@ class LangGraphTravelRouter:
         return {
             "hotel_handoff": handoff.as_agent_input(),
             "hotel_missing_fields": missing,
+            "hotel_missing_questions": questions,
         }
 
     def _route_after_hotel_handoff(
@@ -368,6 +372,7 @@ class LangGraphTravelRouter:
         state: TravelGraphState,
     ) -> Dict[str, Any]:
         missing = state.get("hotel_missing_fields", [])
+        questions = state.get("hotel_missing_questions", [])
         message = (
             "Hotel recommendations are waiting for these details: "
             + ", ".join(missing)
@@ -386,6 +391,7 @@ class LangGraphTravelRouter:
                 "success": False,
                 "trip_id": state.get("trip_id"),
                 "missing_fields": missing,
+                "questions": questions,
                 "requires_user_input": True,
                 "message": message,
             }
