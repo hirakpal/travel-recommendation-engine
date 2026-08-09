@@ -29,8 +29,14 @@ class TripRegisterRepository:
         check_out_date: date,
         budget_total: float,
         currency: str = "USD",
+        travelers: int = 1,
+        adults: int = 1,
         interests: List[str] = None,
-        dietary_restrictions: List[str] = None
+        dietary_restrictions: List[str] = None,
+        accessibility_needs: List[str] = None,
+        transport_preferences: List[str] = None,
+        accommodation_preferences: List[str] = None,
+        notes: Optional[str] = None,
     ) -> Trip:
         """Create new trip."""
         num_nights = (check_out_date - check_in_date).days
@@ -44,8 +50,14 @@ class TripRegisterRepository:
             num_nights=num_nights,
             budget_total=budget_total,
             currency=currency,
+            travelers=travelers,
+            adults=adults,
             interests=interests or [],
-            dietary_restrictions=dietary_restrictions or []
+            dietary_restrictions=dietary_restrictions or [],
+            accessibility_needs=accessibility_needs or [],
+            transport_preferences=transport_preferences or [],
+            accommodation_preferences=accommodation_preferences or [],
+            notes=notes,
         )
         
         self.db.add(trip)
@@ -432,3 +444,4 @@ class TripRegisterRepository:
             "cost": booking.cost,
             "confirmation": booking.confirmation_number
         }
+
