@@ -73,6 +73,8 @@ class TripDraft(BaseModel):
                 continue
             if value is None or value == "":
                 continue
+            if key in {"travelers", "adults"} and value == 0:
+                continue
             current[key] = value
 
         return TripDraft.model_validate(current)
