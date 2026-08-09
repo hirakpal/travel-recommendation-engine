@@ -15,7 +15,8 @@ class TripDraft(BaseModel):
     budget: Optional[float] = Field(default=None, gt=0)
     currency: str = "USD"
 
-    travelers: int = Field(default=1, ge=1)
+    travelers: Optional[int] = Field(default=None, ge=1)
+    adults: Optional[int] = Field(default=None, ge=1)
     interests: List[str] = Field(default_factory=list)
     dietary_restrictions: List[str] = Field(default_factory=list)
     accessibility_needs: List[str] = Field(default_factory=list)
@@ -33,6 +34,16 @@ class TripDraft(BaseModel):
             raise ValueError(
                 "Check-out date must be after check-in date."
             )
+
+        if (
+            self.travelers is not None
+            and self.adults is not None
+            and self.adults > self.travelers
+        ):
+            raise ValueError(
+                "Number of adults cannot exceed number of travelers."
+            )
+
         return self
 
     def missing_required_fields(self) -> List[str]:
@@ -43,6 +54,8 @@ class TripDraft(BaseModel):
             "check_in_date": self.check_in_date,
             "check_out_date": self.check_out_date,
             "budget": self.budget,
+            "travelers": self.travelers,
+            "adults": self.adults,
         }
         return [name for name, value in required.items() if not value]
 
