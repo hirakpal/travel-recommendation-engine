@@ -10,6 +10,7 @@ from src.agents.activities_agent import ActivitiesAgent
 from src.agents.hotel_agent import HotelAgent
 from src.agents.restaurant_agent import RestaurantAgent
 from src.core.intent_parser import IntentParser
+from src.core.runtime_diagnostics import record_event
 from src.database.trip_register_repository import TripRegisterRepository
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,9 @@ class TravelGraphState(TypedDict, total=False):
     user_request: str
     user_id: str
     intent: Dict[str, Any]
+    check_in_date: date
+    check_out_date: date
+    number_of_nights: int
     route: RouteName
     trip_id: str
     trip: Any
@@ -116,6 +120,12 @@ class LangGraphTravelRouter:
         """Execute the routed graph and return the UI result format."""
 
         logger.info("LANGGRAPH_INVOKE_START")
+        record_event(
+            "LangGraph",
+            "workflow_started",
+            mode="orchestration",
+            input_data={"user_request": user_request, "user_id": user_id},
+        )
 
         try:
             state = await self.graph.ainvoke(
@@ -125,6 +135,15 @@ class LangGraphTravelRouter:
                 }
             )
             logger.info("LANGGRAPH_INVOKE_SUCCESS")
+            record_event(
+                "LangGraph",
+                "workflow_completed",
+                mode="orchestration",
+                status="success",
+                input_data=user_request,
+                output_data=state.get("result"),
+                trip_id=state.get("trip_id"),
+            )
             return state.get(
                 "result",
                 {
@@ -134,6 +153,14 @@ class LangGraphTravelRouter:
             )
         except Exception as exc:
             logger.exception("LANGGRAPH_INVOKE_FAILED")
+            record_event(
+                "LangGraph",
+                "workflow_failed",
+                mode="orchestration",
+                status="error",
+                input_data=user_request,
+                output_data=f"{type(exc).__name__}: {exc}",
+            )
             return {
                 "success": False,
                 "error": f"{type(exc).__name__}: {exc}",
@@ -200,8 +227,32 @@ class LangGraphTravelRouter:
             "intent_type": self._route_name(parsed.type),
         }
 
+        check_in = intent["check_in_date"]
+        check_out = intent["check_out_date"]
+        number_of_nights = (check_out - check_in).days
+        logger.info(
+            "LANGGRAPH_DATE_CONTEXT arrival=%s return=%s nights=%s",
+            check_in,
+            check_out,
+            number_of_nights,
+        )
+
         logger.info("LANGGRAPH_INTENT_PARSED route=%s", intent["intent_type"])
-        return {"intent": intent, "route": intent["intent_type"]}
+        record_event(
+            "Intent Router",
+            "intent_parsed",
+            mode="llm",
+            status="success",
+            input_data=state["user_request"],
+            output_data=intent,
+        )
+        return {
+            "intent": intent,
+            "route": intent["intent_type"],
+            "check_in_date": check_in,
+            "check_out_date": check_out,
+            "number_of_nights": number_of_nights,
+        }
 
     def _route_after_intent(
         self,
@@ -225,17 +276,41 @@ class LangGraphTravelRouter:
             dietary_restrictions=intent["dietary"],
         )
         logger.info("LANGGRAPH_TRIP_CREATED trip_id=%s", trip.id)
+        record_event(
+            "Master Trip Register",
+            "trip_created",
+            mode="database",
+            status="success",
+            input_data=intent,
+            output_data={"trip_id": trip.id, "nights": trip.num_nights},
+            trip_id=trip.id,
+        )
         return {"trip_id": trip.id, "trip": trip}
 
     def _route_after_trip(self, state: TravelGraphState) -> RouteName:
         return state.get("route", "trip_planning")
 
     async def _run_hotel(self, state: TravelGraphState) -> Dict[str, Any]:
+        logger.info(
+            "LANGGRAPH_HOTEL_CONTEXT check_in=%s check_out=%s nights=%s",
+            state["check_in_date"],
+            state["check_out_date"],
+            state["number_of_nights"],
+        )
         result = await self.hotel_agent.process(
             trip_id=state["trip_id"],
             city=state["intent"]["destination"],
         )
         logger.info("LANGGRAPH_HOTEL_COMPLETE")
+        record_event(
+            "Hotel Agent",
+            "recommendations_completed",
+            mode="agent",
+            status="success",
+            input_data={"trip_id": state["trip_id"], "city": state["intent"]["destination"]},
+            output_data=result,
+            trip_id=state["trip_id"],
+        )
         return {"hotel_result": result}
 
     def _route_after_hotel(self, state: TravelGraphState) -> RouteName:
@@ -245,11 +320,26 @@ class LangGraphTravelRouter:
         self,
         state: TravelGraphState,
     ) -> Dict[str, Any]:
+        logger.info(
+            "LANGGRAPH_ACTIVITIES_CONTEXT check_in=%s check_out=%s nights=%s",
+            state["check_in_date"],
+            state["check_out_date"],
+            state["number_of_nights"],
+        )
         result = await self.activities_agent.process(
             trip_id=state["trip_id"],
             city=state["intent"]["destination"],
         )
         logger.info("LANGGRAPH_ACTIVITIES_COMPLETE")
+        record_event(
+            "Activities Agent",
+            "recommendations_completed",
+            mode="agent",
+            status="success",
+            input_data={"trip_id": state["trip_id"], "city": state["intent"]["destination"]},
+            output_data=result,
+            trip_id=state["trip_id"],
+        )
         return {"activities_result": result}
 
     async def _run_restaurants(
@@ -261,6 +351,15 @@ class LangGraphTravelRouter:
             city=state["intent"]["destination"],
         )
         logger.info("LANGGRAPH_RESTAURANTS_COMPLETE")
+        record_event(
+            "Restaurant Agent",
+            "recommendations_completed",
+            mode="agent",
+            status="success",
+            input_data={"trip_id": state["trip_id"], "city": state["intent"]["destination"]},
+            output_data=result,
+            trip_id=state["trip_id"],
+        )
         return {"restaurant_result": result}
 
     def _route_after_activities(
@@ -317,6 +416,19 @@ class LangGraphTravelRouter:
                 f"{trip.destination}."
             ),
         }
+        record_event(
+            "LangGraph",
+            "recommendation_result_assembled",
+            mode="orchestration",
+            status="success",
+            output_data={
+                "hotel": bool(hotel),
+                "activities": len(activities),
+                "meals": len(meals),
+                "conflicts": len(conflicts),
+            },
+            trip_id=trip_id,
+        )
         return {"result": result}
 
     @staticmethod
