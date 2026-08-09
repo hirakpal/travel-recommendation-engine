@@ -51,6 +51,24 @@ class AskAnita:
         logger.info("ANITA_MESSAGE_START")
         logger.info("User message: %s", user_message)
 
+        # Count answers are deterministic and must not be delegated to the
+        # LLM, because a bare number is otherwise ambiguous.
+        count_updates = self._apply_count_answer(
+            draft,
+            user_message,
+            {},
+        )
+        if count_updates:
+            updated_draft = draft.merge(count_updates)
+            reply = self.next_question(updated_draft)
+            logger.info("ANITA_COUNT_FIX_VERSION=2")
+            logger.info(
+                "ANITA_MESSAGE_SUCCESS complete=%s missing=%s",
+                updated_draft.is_complete,
+                updated_draft.missing_required_fields(),
+            )
+            return updated_draft, reply
+
         prompt = self._build_prompt(draft, user_message)
 
         try:
