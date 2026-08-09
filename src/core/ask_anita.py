@@ -79,8 +79,15 @@ class AskAnita:
             updated_draft = draft.merge(updates)
             reply = extraction.reply.strip()
 
-            if not reply:
-                reply = self.next_question(updated_draft)
+            if updated_draft.is_complete:
+                if not reply:
+                    reply = self.next_question(updated_draft)
+            else:
+                next_question = self.next_question(updated_draft)
+                if reply:
+                    reply = f"{reply}\n\n{next_question}"
+                else:
+                    reply = next_question
 
             logger.info(
                 "ANITA_MESSAGE_SUCCESS complete=%s missing=%s",
@@ -137,10 +144,10 @@ user. Do not invent values. Return JSON in this exact shape:
     "destination": "",
     "check_in_date": "YYYY-MM-DD",
     "check_out_date": "YYYY-MM-DD",
-    "budget": 0,
+    "budget": null,
     "currency": "USD",
-    "travelers": 0,
-    "adults": 0,
+    "travelers": null,
+    "adults": null,
     "interests": [],
     "dietary_restrictions": [],
     "accessibility_needs": [],
