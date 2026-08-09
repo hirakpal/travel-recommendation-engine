@@ -8,7 +8,7 @@ recommendation workflow.
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import Any, ClassVar, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -30,6 +30,22 @@ class HotelHandoff(BaseModel):
 
     # Collected by Hotel Agent after the core handoff is complete.
     accommodation_preferences: Optional[List[str]] = None
+
+    MISSING_FIELD_QUESTIONS: ClassVar[Dict[str, str]] = {
+        "trip_id": "I need the trip ID before I can continue with hotel recommendations.",
+        "destination": "Which destination should I search for hotels in?",
+        "check_in_date": "What is your hotel check-in date?",
+        "check_out_date": "What is your hotel check-out date?",
+        "number_of_nights": "How many nights will you stay?",
+        "travelers": "How many travelers will need accommodation?",
+        "adults": "How many of the travelers are adults?",
+        "budget": "What is your accommodation budget?",
+        "currency": "Which currency should I use for the accommodation budget?",
+        "accommodation_preferences": (
+            "Which accommodation features do you prefer: breakfast, room "
+            "size, bed size, pool, Wi-Fi, early check-in, or late check-out?"
+        ),
+    }
 
     @model_validator(mode="after")
     def validate_relationships(self) -> "HotelHandoff":
@@ -124,6 +140,22 @@ class HotelHandoff(BaseModel):
             if value is None or value == "" or value == []:
                 missing.append(field_name)
         return missing
+
+    def missing_questions(
+        self,
+        *,
+        include_accommodation_preferences: bool = False,
+    ) -> List[str]:
+        """Return questions corresponding only to currently missing fields."""
+
+        return [
+            self.MISSING_FIELD_QUESTIONS[field]
+            for field in self.missing_fields(
+                include_accommodation_preferences=(
+                    include_accommodation_preferences
+                )
+            )
+        ]
 
     @property
     def ready_for_hotel_agent(self) -> bool:
