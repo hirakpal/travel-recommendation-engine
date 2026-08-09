@@ -30,6 +30,7 @@ from src.core.llm_client import LLMClient
 from src.core.langgraph_router import LangGraphTravelRouter
 from src.core.ask_anita import AskAnita
 from src.core.trip_draft import TripDraft
+from src.core.trip_patch import TripPatch
 from src.core.hotel_recommendation_state import (
     HotelRecommendationSession,
 )
@@ -83,6 +84,8 @@ if 'anita_confirmed' not in st.session_state:
     st.session_state.anita_confirmed = False
 if 'anita_trip_id' not in st.session_state:
     st.session_state.anita_trip_id = None
+if 'anita_register_version' not in st.session_state:
+    st.session_state.anita_register_version = None
 if 'anita_summary' not in st.session_state:
     st.session_state.anita_summary = None
 if 'anita_summary_hash' not in st.session_state:
@@ -387,29 +390,62 @@ def page_ask_anita():
             else:
                 st.session_state.anita_confirmed = True
                 try:
-                    logger.info("MASTER_TRIP_REGISTER_CREATE_START")
+                    logger.info("MASTER_TRIP_REGISTER_SAVE_START")
                     db = get_db_session()
                     register = TripRegisterRepository(db)
-                    trip = register.create_trip(
-                        user_id="streamlit_user",
-                        destination=draft.destination,
-                        check_in_date=draft.check_in_date,
-                        check_out_date=draft.check_out_date,
-                        budget_total=draft.budget,
-                        currency=draft.currency,
-                        travelers=draft.travelers,
-                        adults=draft.adults,
-                        interests=draft.interests,
-                        dietary_restrictions=draft.dietary_restrictions,
-                        accessibility_needs=draft.accessibility_needs,
-                        transport_preferences=draft.transport_preferences,
-                        accommodation_preferences=draft.accommodation_preferences,
-                        notes=draft.notes,
-                    )
+                    register_values = {
+                        "destination": draft.destination,
+                        "check_in_date": draft.check_in_date,
+                        "check_out_date": draft.check_out_date,
+                        "budget_total": draft.budget,
+                        "currency": draft.currency,
+                        "travelers": draft.travelers,
+                        "adults": draft.adults,
+                        "interests": draft.interests,
+                        "dietary_restrictions": draft.dietary_restrictions,
+                        "accessibility_needs": draft.accessibility_needs,
+                        "transport_preferences": draft.transport_preferences,
+                        "accommodation_preferences": draft.accommodation_preferences,
+                        "notes": draft.notes,
+                    }
+                    existing_trip = None
+                    if st.session_state.anita_trip_id:
+                        existing_trip = register.get_trip(
+                            st.session_state.anita_trip_id
+                        )
+
+                    if existing_trip:
+                        patch = TripPatch.model_validate(register_values)
+                        trip = register.update_trip(
+                            existing_trip.id,
+                            patch.changed_fields(),
+                            expected_version=(
+                                st.session_state.anita_register_version
+                                if st.session_state.anita_register_version is not None
+                                else existing_trip.version
+                            ),
+                            agent_name="Ask Anita",
+                            reason="User-confirmed trip draft update",
+                        )
+                        logger.info(
+                            "MASTER_TRIP_REGISTER_UPDATE_SUCCESS trip_id=%s version=%s",
+                            trip.id,
+                            trip.version,
+                        )
+                    else:
+                        trip = register.create_trip(
+                            user_id="streamlit_user",
+                            **register_values,
+                        )
+                        logger.info(
+                            "MASTER_TRIP_REGISTER_CREATE_SUCCESS trip_id=%s",
+                            trip.id,
+                        )
                     st.session_state.anita_trip_id = trip.id
                     st.session_state.trip_id = trip.id
+                    st.session_state.anita_register_version = trip.version
                     logger.info(
-                        "MASTER_TRIP_REGISTER_CREATE_SUCCESS trip_id=%s "
+                        "MASTER_TRIP_REGISTER_SAVE_SUCCESS trip_id=%s "
                         "travelers=%s adults=%s nights=%s",
                         trip.id,
                         draft.travelers,
@@ -469,6 +505,7 @@ def page_ask_anita():
         ]
         st.session_state.anita_confirmed = False
         st.session_state.anita_trip_id = None
+        st.session_state.anita_register_version = None
         st.session_state.anita_summary = None
         st.session_state.anita_summary_hash = None
         st.session_state.hotel_page_index = 0
