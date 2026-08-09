@@ -117,6 +117,27 @@ class AskAnita:
             )
             return updated_draft, reply
 
+        try:
+            deterministic_updates = self._extract_deterministic_fields(
+                draft,
+                user_message,
+            )
+        except ValueError:
+            return draft, (
+                "That is not a valid calendar date. Please provide a "
+                "real day and month, for example: 23 August."
+            )
+
+        if (
+            deterministic_updates
+            and self._is_deterministic_only(user_message)
+        ):
+            logger.info("ANITA_DETERMINISTIC_PATH")
+            return self._apply_local_updates(
+                draft,
+                deterministic_updates,
+            )
+
         prompt = self._build_prompt(draft, user_message)
 
         try:
@@ -318,6 +339,65 @@ class AskAnita:
 
         return result
 
+    def _apply_local_updates(
+        self,
+        draft: TripDraft,
+        updates: Dict[str, Any],
+    ) -> Tuple[TripDraft, str]:
+        """Validate deterministic updates without an LLM call."""
+
+        try:
+            candidate = draft.merge(updates)
+        except ValueError:
+            return draft, (
+                "That is not a valid value. Please provide a corrected "
+                "date, budget, or traveler count."
+            )
+
+        current_year = date.today().year
+        for field_name in ("check_in_date", "check_out_date"):
+            value = getattr(candidate, field_name)
+            if value and value.year < current_year:
+                return draft, (
+                    f"The year must be {current_year} or later. "
+                    "Please provide the date again."
+                )
+
+        duration = candidate.duration_days
+        date_changed = bool(
+            {"check_in_date", "check_out_date"}.intersection(updates)
+        )
+
+        if date_changed and duration is not None and duration > 20:
+            return draft, (
+                "We do not support trips longer than 20 days. "
+                "Please adjust the dates or reply 'exit' to stop."
+            )
+
+        if date_changed and duration is not None and duration > 10:
+            updates = dict(updates)
+            updates["date_confirmation_required"] = True
+            candidate = draft.merge(updates)
+
+        return candidate, self._build_state_reply(candidate, updates)
+
+    @staticmethod
+    def _is_deterministic_only(user_message: str) -> bool:
+        """Identify messages that do not require an LLM."""
+
+        text = user_message.strip().lower()
+        patterns = [
+            r"\d+",
+            r"\d+\s*(?:adults?|travellers?|travelers?|people)",
+            r"\d{1,3}\s*[,/]\s*\d{1,3}(?:\s*[,/]\s*\d{1,3})?",
+            r"\d{1,2}(?:st|nd|rd|th)?\s+[a-z]+(?:\s+\d{4})?",
+            r"(?:\d[\d,]*(?:\.\d+)?)\s*"
+            r"(?:inr|usd|eur|gbp|aud|cad|sgd|jpy|\$|€|£)",
+            r"(?:year\s*)?\d{4}",
+            r"(?:trip|travel|visit|go)\s+to\s+[a-z][a-z .'-]+",
+        ]
+        return any(re.fullmatch(pattern, text) for pattern in patterns)
+
     @staticmethod
     def _extract_deterministic_fields(
         draft: TripDraft,
@@ -328,6 +408,14 @@ class AskAnita:
         text = user_message.strip()
         lower_text = text.lower()
         updates: Dict[str, Any] = {}
+
+        destination_match = re.fullmatch(
+            r"(?:trip|travel|visit|go)\s+to\s+(.+)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if destination_match:
+            updates["destination"] = destination_match.group(1).strip()
 
         if draft.pending_date_field:
             year_match = re.fullmatch(
