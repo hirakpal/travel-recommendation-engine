@@ -42,6 +42,8 @@ class AskAnita:
         "pending_date_day",
         "pending_date_month",
         "date_confirmation_required",
+        "pending_preference_field",
+        "preferences_collected",
     }
 
     def __init__(self, llm_client):
@@ -59,6 +61,16 @@ class AskAnita:
         logger.info("User message: %s", user_message)
 
         normalized_message = user_message.strip().lower()
+
+        # Once mandatory fields are complete, the next user message belongs
+        # to the first optional agent-input question unless one is already
+        # pending.
+        if (
+            not draft.missing_required_fields()
+            and not draft.preferences_collected
+            and draft.pending_preference_field is None
+        ):
+            draft = self._prepare_preference_state(draft)
 
         if draft.date_confirmation_required:
             if normalized_message in {
@@ -115,6 +127,19 @@ class AskAnita:
                     f"{date.today().year} or a future year for the "
                     f"{draft.pending_date_field.replace('_', ' ')}."
                 )
+
+        if draft.pending_preference_field:
+            updated_draft = self._apply_preference_answer(
+                draft,
+                user_message,
+            )
+            if updated_draft is not None:
+                logger.info(
+                    "ANITA_PREFERENCE_CAPTURED field=%s values=%s",
+                    draft.pending_preference_field,
+                    getattr(updated_draft, draft.pending_preference_field),
+                )
+                return updated_draft, self.next_question(updated_draft)
 
         # A duration does not identify calendar dates. Never let the LLM
         # invent an arrival year or return date from "5 nights".
@@ -483,6 +508,111 @@ class AskAnita:
         return has_duration and not has_calendar_date
 
     @staticmethod
+    def _preference_questions() -> Dict[str, str]:
+        return {
+            "interests": (
+                "What are your interests for this trip? For example: "
+                "culture, food, history, nature, shopping, or adventure. "
+                "Reply 'none' if you have no preference."
+            ),
+            "dietary_restrictions": (
+                "Do you have any dietary restrictions? For example: "
+                "vegetarian, vegan, halal, kosher, or gluten-free. "
+                "Reply 'none' if not applicable."
+            ),
+            "accessibility_needs": (
+                "Do you have any accessibility needs I should consider, "
+                "such as wheelchair access or limited walking? Reply "
+                "'none' if not applicable."
+            ),
+            "transport_preferences": (
+                "How would you prefer to get around? For example: walking, "
+                "public transport, taxi, rental car, or private transfer. "
+                "Reply 'none' if you have no preference."
+            ),
+            "accommodation_preferences": (
+                "What accommodation would you prefer? For example: hotel, "
+                "hostel, apartment, family-friendly, luxury, or near the "
+                "city center. Reply 'none' if you have no preference."
+            ),
+        }
+
+    @classmethod
+    def _next_preference_field(
+        cls,
+        draft: TripDraft,
+    ) -> str | None:
+        if draft.missing_required_fields():
+            return None
+
+        fields = tuple(cls._preference_questions())
+        if draft.pending_preference_field in fields:
+            return draft.pending_preference_field
+
+        for field_name in fields:
+            value = getattr(draft, field_name)
+            if not value:
+                return field_name
+
+        return None
+
+    @classmethod
+    def _prepare_preference_state(cls, draft: TripDraft) -> TripDraft:
+        """Set the next optional question after mandatory data is complete."""
+
+        if draft.missing_required_fields():
+            return draft
+
+        next_field = cls._next_preference_field(draft)
+        if next_field is None:
+            return draft.merge(
+                {
+                    "pending_preference_field": None,
+                    "preferences_collected": True,
+                }
+            )
+
+        if draft.pending_preference_field == next_field:
+            return draft
+
+        return draft.merge({"pending_preference_field": next_field})
+
+    @classmethod
+    def _apply_preference_answer(
+        cls,
+        draft: TripDraft,
+        user_message: str,
+    ) -> TripDraft | None:
+        field_name = draft.pending_preference_field
+        if field_name not in cls._preference_questions():
+            return None
+
+        text = user_message.strip()
+        if text.lower() in {"no", "none", "n/a", "na", "skip", "not applicable"}:
+            values = []
+        else:
+            values = [
+                value.strip()
+                for value in re.split(r",|\band\b|;", text, flags=re.IGNORECASE)
+                if value.strip()
+            ]
+
+        current = draft.merge({field_name: values})
+        fields = tuple(cls._preference_questions())
+        index = fields.index(field_name)
+        if index == len(fields) - 1:
+            return current.merge(
+                {
+                    "pending_preference_field": None,
+                    "preferences_collected": True,
+                }
+            )
+
+        return current.merge(
+            {"pending_preference_field": fields[index + 1]}
+        )
+
+    @staticmethod
     def _extract_deterministic_fields(
         draft: TripDraft,
         user_message: str,
@@ -683,6 +813,12 @@ class AskAnita:
         missing = draft.missing_required_fields()
         if missing:
             return questions[missing[0]]
+
+        preference_field = draft.pending_preference_field
+        if preference_field is None and not draft.preferences_collected:
+            preference_field = AskAnita._next_preference_field(draft)
+        if preference_field:
+            return AskAnita._preference_questions()[preference_field]
 
         return (
             "I have all the required details. Please review the trip "
