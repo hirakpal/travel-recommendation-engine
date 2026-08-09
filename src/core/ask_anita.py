@@ -295,6 +295,13 @@ class AskAnita:
         )
         if count_updates:
             updated_draft = draft.merge(count_updates)
+            if (
+                not updated_draft.missing_required_fields()
+                and not updated_draft.preferences_collected
+            ):
+                updated_draft = self._prepare_preference_state(
+                    updated_draft
+                )
             reply = self.next_question(updated_draft)
             record_event(
                 "Ask Anita",
@@ -431,6 +438,14 @@ class AskAnita:
                 candidate = draft.merge(updates)
 
             updated_draft = candidate
+            if (
+                not updated_draft.missing_required_fields()
+                and not updated_draft.preferences_collected
+                and updated_draft.pending_preference_field is None
+            ):
+                updated_draft = self._prepare_preference_state(
+                    updated_draft
+                )
             
             # Follow-up text is generated from validated state, not from
             # free-form LLM text that may invent a year such as 2023.
@@ -621,6 +636,14 @@ class AskAnita:
             updates = dict(updates)
             updates["date_confirmation_required"] = True
             candidate = draft.merge(updates)
+
+        if (
+            not candidate.missing_required_fields()
+            and not candidate.preferences_collected
+            and candidate.pending_preference_field is None
+            and not candidate.date_confirmation_required
+        ):
+            candidate = self._prepare_preference_state(candidate)
 
         return candidate, self._build_state_reply(candidate, updates)
 
