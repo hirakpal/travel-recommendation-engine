@@ -40,6 +40,7 @@ class AskAnita:
         "pending_date_field",
         "pending_date_day",
         "pending_date_month",
+        "date_confirmation_required",
     }
 
     def __init__(self, llm_client):
@@ -54,6 +55,49 @@ class AskAnita:
 
         logger.info("ANITA_MESSAGE_START")
         logger.info("User message: %s", user_message)
+
+        normalized_message = user_message.strip().lower()
+
+        if draft.date_confirmation_required:
+            if normalized_message in {
+                "yes",
+                "y",
+                "confirm",
+                "confirmed",
+                "looks good",
+            }:
+                updated_draft = draft.merge(
+                    {"date_confirmation_required": False}
+                )
+                return updated_draft, self.next_question(updated_draft)
+
+            if normalized_message in {
+                "exit",
+                "cancel",
+                "quit",
+            }:
+                return draft, (
+                    "Understood. I will not continue with these dates. "
+                    "You can start a new conversation when ready."
+                )
+
+            if normalized_message in {"no", "n", "change", "revise"}:
+                updated_draft = draft.merge(
+                    {
+                        "check_in_date": None,
+                        "check_out_date": None,
+                        "date_confirmation_required": False,
+                    }
+                )
+                return updated_draft, (
+                    "Please provide a new check-in and check-out date."
+                )
+
+            return draft, (
+                "Your trip is longer than 10 days. Please reply "
+                "'yes' to confirm these dates, 'no' to change them, "
+                "or 'exit' to stop."
+            )
 
         # Count answers are deterministic and must not be delegated to the
         # LLM, because a bare number is otherwise ambiguous.
@@ -105,14 +149,62 @@ class AskAnita:
                 updates,
             )
 
-            deterministic_updates = self._extract_deterministic_fields(
-                draft,
-                user_message,
-            )
+            try:
+                deterministic_updates = (
+                    self._extract_deterministic_fields(
+                        draft,
+                        user_message,
+                    )
+                )
+            except ValueError:
+                return draft, (
+                    "That is not a valid calendar date. Please provide "
+                    "a real day and month, for example: 23 August."
+                )
             updates.update(deterministic_updates)
 
-            updated_draft = draft.merge(updates)
+            try:
+                candidate = draft.merge(updates)
+            except ValueError as exc:
+                return draft, (
+                    f"I could not use that date: {exc} "
+                    "Please provide a valid date."
+                )
 
+            if candidate.check_in_date and candidate.check_in_date.year < date.today().year:
+                return draft, (
+                    "The date year cannot be before the current year "
+                    f"({date.today().year}). Please provide a current "
+                    "or future year."
+                )
+
+            if candidate.check_out_date and candidate.check_out_date.year < date.today().year:
+                return draft, (
+                    "The date year cannot be before the current year "
+                    f"({date.today().year}). Please provide a current "
+                    "or future year."
+                )
+
+            duration = candidate.duration_days
+            date_changed = bool(
+                {
+                    "check_in_date",
+                    "check_out_date",
+                }.intersection(updates)
+            )
+
+            if date_changed and duration is not None and duration > 20:
+                return draft, (
+                    "We do not support trips longer than 20 days. "
+                    "Please adjust the dates or reply 'exit' to stop."
+                )
+
+            if date_changed and duration is not None and duration > 10:
+                updates["date_confirmation_required"] = True
+                candidate = draft.merge(updates)
+
+            updated_draft = candidate
+            
             # Follow-up text is generated from validated state, not from
             # free-form LLM text that may invent a year such as 2023.
             reply = self._build_state_reply(
@@ -151,6 +243,13 @@ class AskAnita:
                 f"I understood {month_name} "
                 f"{draft.pending_date_day}. Which year should I use? "
                 "Please reply with a four-digit year, for example: 2026."
+            )
+
+        if draft.date_confirmation_required:
+            return (
+                f"Your trip is {draft.duration_days} days long. "
+                "Please confirm both dates by replying 'yes', reply "
+                "'no' to change them, or 'exit' to stop."
             )
 
         if "check_in_date" in updates:
@@ -237,11 +336,17 @@ class AskAnita:
             )
             if year_match:
                 year = int(year_match.group(1))
-                parsed = date(
-                    year,
-                    draft.pending_date_month,
-                    draft.pending_date_day,
-                )
+                try:
+                    parsed = date(
+                        year,
+                        draft.pending_date_month,
+                        draft.pending_date_day,
+                    )
+                except ValueError:
+                    return draft, (
+                        "That is not a valid calendar date. "
+                        "Please provide a valid year."
+                    )
                 updates[draft.pending_date_field] = parsed
                 updates["pending_date_field"] = None
                 updates["pending_date_day"] = None
