@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from src.core.trip_draft import TripDraft
 from src.core.runtime_diagnostics import record_event
+from src.core.preference_taxonomy import normalize_preference_values
 
 logger = logging.getLogger(__name__)
 logger.info("ANITA_SOURCE_VERSION=DATE_CONFIRMATION_V5")
@@ -305,6 +306,17 @@ class AskAnita:
                 for key, value in extraction.updates.items()
                 if key in self.ALLOWED_FIELDS
             }
+            for field_name in (
+                "dietary_restrictions",
+                "accessibility_needs",
+                "transport_preferences",
+                "accommodation_preferences",
+            ):
+                if field_name in updates:
+                    updates[field_name] = normalize_preference_values(
+                        field_name,
+                        updates[field_name],
+                    )
 
             updates = self._apply_count_answer(
                 draft,
@@ -621,9 +633,9 @@ class AskAnita:
                 "Reply 'none' if you have no preference."
             ),
             "accommodation_preferences": (
-                "What accommodation would you prefer? For example: hotel, "
-                "hostel, apartment, family-friendly, luxury, or near the "
-                "city center. Reply 'none' if you have no preference."
+                "Which hotel tier do you prefer: Budget / Backpacker, "
+                "Mid-Range, or Luxury / 5-Star? You may select one or more. "
+                "Reply 'none' if you have no preference."
             ),
         }
 
@@ -681,11 +693,7 @@ class AskAnita:
         if text.lower() in {"no", "none", "n/a", "na", "skip", "not applicable"}:
             values = []
         else:
-            values = [
-                value.strip()
-                for value in re.split(r",|\band\b|;", text, flags=re.IGNORECASE)
-                if value.strip()
-            ]
+            values = normalize_preference_values(field_name, text)
 
         current = draft.merge({field_name: values})
         fields = tuple(cls._preference_questions())
