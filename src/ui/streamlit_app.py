@@ -147,7 +147,14 @@ def generate_trip_summary(draft: TripDraft) -> str:
 st.sidebar.title("🧭 Navigation")
 page = st.sidebar.radio(
     "Select Page",
-    ["💬 Ask Anita", "📝 Plan Trip", "📊 Trip Details", "📅 Itinerary", "⚠️ Conflicts", "💰 Budget", "📜 Audit Log"]
+    [
+        "💬 Ask Anita",
+        "📊 Trip Details",
+        "📅 Itinerary",
+        "⚠️ Conflicts",
+        "💰 Budget",
+        "📜 Audit Log",
+    ],
 )
 
 st.sidebar.markdown("---")
@@ -187,9 +194,7 @@ def main():
     Plan your perfect trip with AI-powered coordination across hotels, activities, and restaurants!
     """)
     
-    if page == "📝 Plan Trip":
-        page_plan_trip()
-    elif page == "💬 Ask Anita":
+    if page == "💬 Ask Anita":
         page_ask_anita()
     elif page == "📊 Trip Details":
         page_trip_details()
@@ -376,6 +381,7 @@ def page_ask_anita():
             else:
                 st.session_state.anita_confirmed = True
                 try:
+                    logger.info("MASTER_TRIP_REGISTER_CREATE_START")
                     db = get_db_session()
                     register = TripRegisterRepository(db)
                     trip = register.create_trip(
@@ -396,6 +402,14 @@ def page_ask_anita():
                     )
                     st.session_state.anita_trip_id = trip.id
                     st.session_state.trip_id = trip.id
+                    logger.info(
+                        "MASTER_TRIP_REGISTER_CREATE_SUCCESS trip_id=%s "
+                        "travelers=%s adults=%s nights=%s",
+                        trip.id,
+                        draft.travelers,
+                        draft.adults,
+                        draft.number_of_nights,
+                    )
                     st.success(
                         f"Trip draft saved to the Master Trip Register. "
                         f"Trip ID: {trip.id}"
