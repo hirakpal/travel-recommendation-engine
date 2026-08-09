@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from typing import Any, Dict, Tuple
 
 from pydantic import BaseModel, Field
@@ -76,6 +77,12 @@ class AskAnita:
                 if key in self.ALLOWED_FIELDS
             }
 
+            updates = self._apply_count_answer(
+                draft,
+                user_message,
+                updates,
+            )
+
             updated_draft = draft.merge(updates)
             reply = extraction.reply.strip()
 
@@ -100,6 +107,43 @@ class AskAnita:
         except Exception:
             logger.exception("ANITA_MESSAGE_FAILED")
             raise
+
+    @staticmethod
+    def _apply_count_answer(
+        draft: TripDraft,
+        user_message: str,
+        updates: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Resolve numeric traveler answers deterministically."""
+
+        text = user_message.strip().lower()
+        result = dict(updates)
+
+        adult_match = re.search(r"\b(\d+)\s*adults?\b", text)
+        traveler_match = re.search(
+            r"\b(\d+)\s*(?:travellers?|travelers?|people)\b",
+            text,
+        )
+
+        if adult_match:
+            result["adults"] = int(adult_match.group(1))
+            return result
+
+        if traveler_match:
+            result["travelers"] = int(traveler_match.group(1))
+            result.pop("adults", None)
+            return result
+
+        if re.fullmatch(r"\d+", text):
+            number = int(text)
+
+            if draft.travelers is None:
+                result["travelers"] = number
+                result.pop("adults", None)
+            elif draft.adults is None:
+                result["adults"] = number
+
+        return result
 
     @staticmethod
     def next_question(draft: TripDraft) -> str:
