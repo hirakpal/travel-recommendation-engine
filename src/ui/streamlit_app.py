@@ -289,6 +289,11 @@ def page_ask_anita():
         st.divider()
         st.subheader("Review your trip details")
 
+        st.error(
+            "CRITICAL: No booking has been made. This is only a proposed "
+            "trip draft. Review every detail before continuing."
+        )
+
         summary_payload = draft.model_dump(mode="json")
         summary_hash = hashlib.sha256(
             json.dumps(
@@ -350,8 +355,10 @@ def page_ask_anita():
         with st.expander("View raw draft data"):
             st.json(summary_payload)
 
-        st.warning(
-            "Review these details carefully. No booking has been made."
+        reviewed = st.checkbox(
+            "I have reviewed the trip details and understand that no booking "
+            "has been made.",
+            key="anita_reviewed_draft",
         )
 
         if st.button(
@@ -359,11 +366,17 @@ def page_ask_anita():
             type="primary",
             use_container_width=True,
         ):
-            st.session_state.anita_confirmed = True
-            st.success(
-                "Trip details confirmed. Recommendation generation "
-                "will be added in the next step."
-            )
+            if not reviewed:
+                st.error(
+                    "Please review the details and acknowledge the "
+                    "no-booking warning before confirming."
+                )
+            else:
+                st.session_state.anita_confirmed = True
+                st.success(
+                    "Trip details confirmed. Recommendation generation "
+                    "will be added in the next step."
+                )
 
     if st.button("🔄 Start a new conversation"):
         st.session_state.anita_draft = TripDraft().model_dump(
