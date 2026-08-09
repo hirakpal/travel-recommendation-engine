@@ -11,6 +11,8 @@ import asyncio
 import logging
 import os
 import sys
+import inspect
+import hashlib
 from pathlib import Path
 
 # Streamlit may execute this file outside the repository root.
@@ -31,6 +33,13 @@ from src.core.trip_draft import TripDraft
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+ANITA_RUNTIME_FILE = inspect.getfile(AskAnita)
+ANITA_RUNTIME_HASH = hashlib.sha256(
+    inspect.getsource(AskAnita.chat).encode("utf-8")
+).hexdigest()[:12]
+logger.info("STREAMLIT_ENTRYPOINT_FILE=%s", __file__)
+logger.info("ANITA_RUNTIME_FILE=%s", ANITA_RUNTIME_FILE)
+logger.info("ANITA_RUNTIME_HASH=%s", ANITA_RUNTIME_HASH)
 
 # ==================== PAGE CONFIG ====================
 
@@ -109,6 +118,17 @@ st.sidebar.info(
     """
 )
 
+with st.sidebar.expander("Runtime diagnostics"):
+    st.code(
+        "\n".join(
+            [
+                f"Entrypoint: {__file__}",
+                f"AskAnita: {ANITA_RUNTIME_FILE}",
+                f"AskAnita hash: {ANITA_RUNTIME_HASH}",
+            ]
+        )
+    )
+
 # ==================== MAIN APP ====================
 
 def main():
@@ -164,6 +184,9 @@ def page_ask_anita():
         )
         st.write(
             f"**Check-out:** {draft.check_out_date or 'Missing'}"
+        )
+        st.write(
+            f"**Nights:** {draft.number_of_nights or 'Calculated after dates'}"
         )
         st.write(
             f"**Budget:** {draft.budget or 'Missing'} "
