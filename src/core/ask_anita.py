@@ -102,25 +102,20 @@ class AskAnita:
                 updates,
             )
 
-            updates.update(
-                self._extract_deterministic_fields(
-                    draft,
-                    user_message,
-                )
+            deterministic_updates = self._extract_deterministic_fields(
+                draft,
+                user_message,
             )
+            updates.update(deterministic_updates)
 
             updated_draft = draft.merge(updates)
-            reply = extraction.reply.strip()
 
-            if updated_draft.is_complete:
-                if not reply:
-                    reply = self.next_question(updated_draft)
-            else:
-                next_question = self.next_question(updated_draft)
-                if reply:
-                    reply = f"{reply}\n\n{next_question}"
-                else:
-                    reply = next_question
+            # Follow-up text is generated from validated state, not from
+            # free-form LLM text that may invent a year such as 2023.
+            reply = self._build_state_reply(
+                updated_draft,
+                deterministic_updates,
+            )
 
             logger.info(
                 "ANITA_MESSAGE_SUCCESS complete=%s missing=%s",
@@ -133,6 +128,44 @@ class AskAnita:
         except Exception:
             logger.exception("ANITA_MESSAGE_FAILED")
             raise
+
+    @staticmethod
+    def _build_state_reply(
+        draft: TripDraft,
+        updates: Dict[str, Any],
+    ) -> str:
+        """Build a truthful response from validated draft state."""
+
+        acknowledgements = []
+
+        if "check_in_date" in updates:
+            acknowledgements.append(
+                f"Check-in set to {draft.check_in_date}."
+            )
+
+        if "check_out_date" in updates:
+            acknowledgements.append(
+                f"Check-out set to {draft.check_out_date}."
+            )
+
+        if "budget" in updates:
+            acknowledgements.append(
+                f"Budget set to {draft.budget:,.2f} "
+                f"{draft.currency}."
+            )
+
+        if draft.is_complete:
+            return (
+                " ".join(acknowledgements)
+                + "\n\nAll required details are collected. "
+                "Please review and confirm them."
+            )
+
+        next_question = AskAnita.next_question(draft)
+        if acknowledgements:
+            return " ".join(acknowledgements) + "\n\n" + next_question
+
+        return next_question
 
     @staticmethod
     def _apply_count_answer(
