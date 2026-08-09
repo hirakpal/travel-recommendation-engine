@@ -73,6 +73,8 @@ if 'anita_messages' not in st.session_state:
     ]
 if 'anita_confirmed' not in st.session_state:
     st.session_state.anita_confirmed = False
+if 'anita_trip_id' not in st.session_state:
+    st.session_state.anita_trip_id = None
 if 'anita_summary' not in st.session_state:
     st.session_state.anita_summary = None
 if 'anita_summary_hash' not in st.session_state:
@@ -373,10 +375,41 @@ def page_ask_anita():
                 )
             else:
                 st.session_state.anita_confirmed = True
-                st.success(
-                    "Trip details confirmed. Recommendation generation "
-                    "will be added in the next step."
-                )
+                try:
+                    db = get_db_session()
+                    register = TripRegisterRepository(db)
+                    trip = register.create_trip(
+                        user_id="streamlit_user",
+                        destination=draft.destination,
+                        check_in_date=draft.check_in_date,
+                        check_out_date=draft.check_out_date,
+                        budget_total=draft.budget,
+                        currency=draft.currency,
+                        travelers=draft.travelers,
+                        adults=draft.adults,
+                        interests=draft.interests,
+                        dietary_restrictions=draft.dietary_restrictions,
+                        accessibility_needs=draft.accessibility_needs,
+                        transport_preferences=draft.transport_preferences,
+                        accommodation_preferences=draft.accommodation_preferences,
+                        notes=draft.notes,
+                    )
+                    st.session_state.anita_trip_id = trip.id
+                    st.session_state.trip_id = trip.id
+                    st.success(
+                        f"Trip draft saved to the Master Trip Register. "
+                        f"Trip ID: {trip.id}"
+                    )
+                    st.info(
+                        "No booking has been made. Recommendations and "
+                        "approvals are the next workflow step."
+                    )
+                except Exception as exc:
+                    logger.exception("ANITA_REGISTER_CREATE_FAILED")
+                    st.error(
+                        f"The draft could not be saved to the Master Trip "
+                        f"Register: {exc}"
+                    )
 
     if st.button("🔄 Start a new conversation"):
         st.session_state.anita_draft = TripDraft().model_dump(
@@ -391,6 +424,7 @@ def page_ask_anita():
             }
         ]
         st.session_state.anita_confirmed = False
+        st.session_state.anita_trip_id = None
         st.session_state.anita_summary = None
         st.session_state.anita_summary_hash = None
         st.rerun()
