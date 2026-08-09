@@ -30,6 +30,11 @@ from src.core.llm_client import LLMClient
 from src.core.langgraph_router import LangGraphTravelRouter
 from src.core.ask_anita import AskAnita
 from src.core.trip_draft import TripDraft
+from src.core.runtime_diagnostics import (
+    clear_events,
+    get_events,
+    record_event,
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -172,15 +177,39 @@ st.sidebar.info(
 )
 
 with st.sidebar.expander("Runtime diagnostics"):
+    events = get_events()
+    st.caption("Runtime and workflow trace")
     st.code(
         "\n".join(
             [
                 f"Entrypoint: {__file__}",
                 f"AskAnita: {ANITA_RUNTIME_FILE}",
                 f"AskAnita hash: {ANITA_RUNTIME_HASH}",
+                f"Events retained: {len(events)} / 250",
+                f"Current trip ID: {st.session_state.trip_id or '-'}",
             ]
         )
     )
+    if events:
+        st.dataframe(
+            [
+                {
+                    "Time": event["timestamp"],
+                    "Component": event["component"],
+                    "Action": event["action"],
+                    "Mode": event["mode"],
+                    "Status": event["status"],
+                    "Trip ID": event.get("trip_id") or "-",
+                }
+                for event in events
+            ],
+            hide_index=True,
+            use_container_width=True,
+        )
+        with st.expander("Latest event payload"):
+            st.json(events[-1])
+    else:
+        st.info("No runtime events yet. Start a conversation or run a recommendation.")
 
 # ==================== MAIN APP ====================
 
@@ -410,6 +439,21 @@ def page_ask_anita():
                         draft.adults,
                         draft.number_of_nights,
                     )
+                    record_event(
+                        "Master Trip Register",
+                        "trip_draft_saved",
+                        mode="database",
+                        status="success",
+                        input_data=draft,
+                        output_data={
+                            "trip_id": trip.id,
+                            "destination": trip.destination,
+                            "nights": trip.num_nights,
+                            "travelers": trip.travelers,
+                            "adults": trip.adults,
+                        },
+                        trip_id=trip.id,
+                    )
                     st.success(
                         f"Trip draft saved to the Master Trip Register. "
                         f"Trip ID: {trip.id}"
@@ -420,12 +464,21 @@ def page_ask_anita():
                     )
                 except Exception as exc:
                     logger.exception("ANITA_REGISTER_CREATE_FAILED")
+                    record_event(
+                        "Master Trip Register",
+                        "trip_draft_save_failed",
+                        mode="database",
+                        status="error",
+                        input_data=draft,
+                        output_data=f"{type(exc).__name__}: {exc}",
+                    )
                     st.error(
                         f"The draft could not be saved to the Master Trip "
                         f"Register: {exc}"
                     )
 
     if st.button("🔄 Start a new conversation"):
+        clear_events()
         st.session_state.anita_draft = TripDraft().model_dump(
             mode="json"
         )
