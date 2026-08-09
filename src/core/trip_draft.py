@@ -24,6 +24,11 @@ class TripDraft(BaseModel):
     accommodation_preferences: List[str] = Field(default_factory=list)
     notes: Optional[str] = None
 
+    # Temporary conversational state; not persisted as trip data.
+    pending_date_field: Optional[str] = None
+    pending_date_day: Optional[int] = None
+    pending_date_month: Optional[int] = None
+
     @model_validator(mode="before")
     @classmethod
     def normalize_missing_counts(cls, values: Any) -> Any:
