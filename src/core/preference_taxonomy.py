@@ -87,6 +87,54 @@ PREFERENCE_ALIASES = {
 }
 
 
+PREFERENCE_OPTIONS = {
+    "interests": [
+        "Culture",
+        "Food",
+        "History",
+        "Nature",
+        "Shopping",
+        "Adventure",
+        "Relaxation",
+        "Architecture",
+    ],
+    "dietary_restrictions": [
+        "Vegetarian",
+        "Vegan",
+        "Gluten-Free",
+        "Dairy-Free / Lactose-Intolerant",
+        "Halal",
+        "Kosher",
+        "Jain",
+        "Nut-Free",
+        "Shellfish-Free",
+        "Diabetic / Low Sugar",
+    ],
+    "accessibility_needs": [
+        "Wheelchair Accessible",
+        "Limited Mobility / Minimal Walking",
+        "Visual Assistance / Braille",
+        "Hearing Assistance",
+        "Neurodivergent / Quiet Spaces",
+        "Assistance Animal Friendly",
+    ],
+    "transport_preferences": [
+        "Walking",
+        "Public Transport (Metro/Bus)",
+        "Taxis & Rideshares",
+        "Rental Car / Self-Drive",
+        "Private Transfer / Chauffeur",
+        "Bicycle",
+        "Intercity Trains",
+    ],
+    "accommodation_preferences": [
+        "Budget / Backpacker",
+        "Mid-Range",
+        "Luxury / 5-Star",
+    ],
+}
+
+
 def _parts(value: str) -> List[str]:
     return [
         part.strip()
