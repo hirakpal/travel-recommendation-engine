@@ -157,7 +157,6 @@ page = st.sidebar.radio(
         "📊 Trip Details",
         "📅 Itinerary",
         "⚠️ Conflicts",
-        "💰 Budget",
         "📜 Audit Log",
     ],
 )
@@ -175,41 +174,6 @@ st.sidebar.info(
     - 🔍 Preference & Conflict Checks
     """
 )
-
-with st.sidebar.expander("Runtime diagnostics"):
-    events = get_events()
-    st.caption("Runtime and workflow trace")
-    st.code(
-        "\n".join(
-            [
-                f"Entrypoint: {__file__}",
-                f"AskAnita: {ANITA_RUNTIME_FILE}",
-                f"AskAnita hash: {ANITA_RUNTIME_HASH}",
-                f"Events retained: {len(events)} / 250",
-                f"Current trip ID: {st.session_state.trip_id or '-'}",
-            ]
-        )
-    )
-    if events:
-        st.dataframe(
-            [
-                {
-                    "Time": event["timestamp"],
-                    "Component": event["component"],
-                    "Action": event["action"],
-                    "Mode": event["mode"],
-                    "Status": event["status"],
-                    "Trip ID": event.get("trip_id") or "-",
-                }
-                for event in events
-            ],
-            hide_index=True,
-            use_container_width=True,
-        )
-        with st.expander("Latest event payload"):
-            st.json(events[-1])
-    else:
-        st.info("No runtime events yet. Start a conversation or run a recommendation.")
 
 # ==================== MAIN APP ====================
 
@@ -231,8 +195,6 @@ def main():
         page_itinerary()
     elif page == "⚠️ Conflicts":
         page_conflicts()
-    elif page == "💰 Budget":
-        page_budget()
     elif page == "📜 Audit Log":
         page_audit_log()
 
@@ -1015,8 +977,53 @@ def page_budget():
 
 # ==================== PAGE: AUDIT LOG ====================
 
+def render_runtime_diagnostics() -> None:
+    """Render workflow diagnostics for the current app session."""
+
+    events = get_events()
+    st.subheader("Runtime Diagnostics")
+    st.caption(
+        "Deterministic validation, LLM handling, agent handoffs, user "
+        "actions, and Master Trip Register events."
+    )
+    st.code(
+        "\n".join(
+            [
+                f"Entrypoint: {__file__}",
+                f"AskAnita: {ANITA_RUNTIME_FILE}",
+                f"AskAnita hash: {ANITA_RUNTIME_HASH}",
+                f"Events retained: {len(events)} / 250",
+                f"Current trip ID: {st.session_state.trip_id or '-'}",
+            ]
+        )
+    )
+    if not events:
+        st.info("No runtime events yet. Start a conversation or run recommendations.")
+        return
+
+    st.dataframe(
+        [
+            {
+                "Time": event["timestamp"],
+                "Component": event["component"],
+                "Action": event["action"],
+                "Mode": event["mode"],
+                "Status": event["status"],
+                "Trip ID": event.get("trip_id") or "-",
+            }
+            for event in events
+        ],
+        hide_index=True,
+        use_container_width=True,
+    )
+    with st.expander("Latest event payload"):
+        st.json(events[-1])
+
 def page_audit_log():
     """Audit log page."""
+
+    render_runtime_diagnostics()
+    st.markdown("---")
     
     st.header("📜 Trip Audit Trail")
     
