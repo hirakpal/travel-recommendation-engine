@@ -169,7 +169,10 @@ def page_ask_anita():
             f"**Budget:** {draft.budget or 'Missing'} "
             f"{draft.currency}"
         )
-        st.write(f"**Travelers:** {draft.travelers}")
+        st.write(
+            f"**Travelers:** {draft.travelers or 'Missing'}"
+        )
+        st.write(f"**Adults:** {draft.adults or 'Missing'}")
 
         if draft.interests:
             st.write(
