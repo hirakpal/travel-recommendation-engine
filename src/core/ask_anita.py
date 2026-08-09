@@ -28,6 +28,7 @@ class AskAnita:
         "budget",
         "currency",
         "travelers",
+        "adults",
         "interests",
         "dietary_restrictions",
         "accessibility_needs",
@@ -102,6 +103,8 @@ class AskAnita:
             "check_in_date": "What is your check-in date?",
             "check_out_date": "What is your check-out date?",
             "budget": "What budget should I plan within, and which currency?",
+            "travelers": "How many travelers will be going?",
+            "adults": "How many of the travelers are adults?",
         }
 
         missing = draft.missing_required_fields()
@@ -136,7 +139,8 @@ user. Do not invent values. Return JSON in this exact shape:
     "check_out_date": "YYYY-MM-DD",
     "budget": 0,
     "currency": "USD",
-    "travelers": 1,
+    "travelers": 0,
+    "adults": 0,
     "interests": [],
     "dietary_restrictions": [],
     "accessibility_needs": [],
