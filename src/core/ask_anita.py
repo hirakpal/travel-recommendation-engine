@@ -753,6 +753,15 @@ class AskAnita:
             elif draft.check_out_date is None:
                 updates["check_out_date"] = parsed_dates[0]
 
+        # A complete date supplied while Anita is waiting for a missing year
+        # supersedes the partial-date state. Without clearing these fields,
+        # the next unrelated message (for example, the budget) can trigger
+        # the old "which year?" question again.
+        if parsed_dates and draft.pending_date_field:
+            updates["pending_date_field"] = None
+            updates["pending_date_day"] = None
+            updates["pending_date_month"] = None
+
         age_values = re.fullmatch(
             r"\s*(\d{1,3})\s*[,/]\s*(\d{1,3})"
             r"(?:\s*[,/]\s*(\d{1,3}))?\s*",
