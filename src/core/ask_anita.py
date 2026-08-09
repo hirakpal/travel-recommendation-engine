@@ -562,13 +562,28 @@ class AskAnita:
                 amount_match.group(1).replace(",", "")
             )
 
+        # Normalize common human date formats before matching. This handles
+        # ordinal suffixes and non-standard whitespace consistently.
+        date_text = re.sub(r"\s+", " ", lower_text).strip()
+        date_text = re.sub(
+            r"\b(\d{1,2})(?:st|nd|rd|th)\b",
+            r"\1",
+            date_text,
+        )
+
         date_matches = re.findall(
-            r"\b(\d{1,2})(?:st|nd|rd|th)?\s+"
+            r"\b(\d{1,2})\s+"
             r"(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|"
             r"May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|"
             r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
             r"(?:\s+(\d{4}))?\b",
+            date_text,
+        )
+        logger.info(
+            "ANITA_DATE_SCAN input=%r normalized=%r matches=%s",
             lower_text,
+            date_text,
+            date_matches,
         )
 
         parsed_dates = []
