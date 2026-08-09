@@ -42,19 +42,15 @@ class HotelHandoff(BaseModel):
         "budget": "What is your accommodation budget?",
         "currency": "Which currency should I use for the accommodation budget?",
         "accommodation_preferences": (
-            "Which accommodation features do you prefer: breakfast, room "
-            "size, bed size, pool, Wi-Fi, early check-in, or late check-out?"
+            "Which hotel tier do you prefer: Budget / Backpacker, Mid-Range, "
+            "or Luxury / 5-Star? You may select one or more."
         ),
     }
 
     ACCOMMODATION_OPTIONS: ClassVar[List[str]] = [
-        "Breakfast",
-        "Room size",
-        "Bed size",
-        "Pool",
-        "Wi-Fi",
-        "Early check-in",
-        "Late check-out",
+        "Budget / Backpacker",
+        "Mid-Range",
+        "Luxury / 5-Star",
     ]
 
     @model_validator(mode="after")
