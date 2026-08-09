@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+from datetime import date, datetime
 from typing import Any, Dict, Tuple
 
 from pydantic import BaseModel, Field
@@ -101,6 +102,13 @@ class AskAnita:
                 updates,
             )
 
+            updates.update(
+                self._extract_deterministic_fields(
+                    draft,
+                    user_message,
+                )
+            )
+
             updated_draft = draft.merge(updates)
             reply = extraction.reply.strip()
 
@@ -164,6 +172,105 @@ class AskAnita:
         return result
 
     @staticmethod
+    def _extract_deterministic_fields(
+        draft: TripDraft,
+        user_message: str,
+    ) -> Dict[str, Any]:
+        """Extract fields where guessing would be unsafe."""
+
+        text = user_message.strip()
+        lower_text = text.lower()
+        updates: Dict[str, Any] = {}
+
+        currency_match = re.search(
+            r"(?:inr|usd|eur|gbp|aud|cad|sgd|jpy|\$|€|£)",
+            lower_text,
+        )
+
+        amount_match = re.search(
+            r"(?<!\d)(\d[\d,]*(?:\.\d+)?)\s*"
+            r"(?:inr|usd|eur|gbp|aud|cad|sgd|jpy|\$|€|£)?",
+            lower_text,
+        )
+
+        if currency_match and amount_match:
+            currency_token = currency_match.group(0)
+            currency_map = {
+                "$": "USD",
+                "€": "EUR",
+                "£": "GBP",
+            }
+            updates["currency"] = currency_map.get(
+                currency_token.upper(),
+                currency_token.upper(),
+            )
+            updates["budget"] = float(
+                amount_match.group(1).replace(",", "")
+            )
+
+        date_matches = re.findall(
+            r"\b(\d{1,2})(?:st|nd|rd|th)?\s+"
+            r"(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|"
+            r"May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|"
+            r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+            r"(?:\s+(\d{4}))?\b",
+            lower_text,
+        )
+
+        parsed_dates = []
+        for day, month, year in date_matches:
+            parsed_dates.append(
+                AskAnita._parse_user_date(day, month, year)
+            )
+
+        if len(parsed_dates) >= 2:
+            updates["check_in_date"] = parsed_dates[0]
+            updates["check_out_date"] = parsed_dates[1]
+        elif len(parsed_dates) == 1:
+            if draft.check_in_date is None:
+                updates["check_in_date"] = parsed_dates[0]
+            elif draft.check_out_date is None:
+                updates["check_out_date"] = parsed_dates[0]
+
+        age_values = re.fullmatch(
+            r"\s*(\d{1,3})\s*[,/]\s*(\d{1,3})"
+            r"(?:\s*[,/]\s*(\d{1,3}))?\s*",
+            text,
+        )
+
+        if age_values and draft.travelers is None:
+            ages = [
+                int(value)
+                for value in age_values.groups()
+                if value is not None
+            ]
+            if len(ages) >= 2:
+                updates["travelers"] = len(ages)
+                updates["adults"] = sum(age >= 18 for age in ages)
+
+        return updates
+
+    @staticmethod
+    def _parse_user_date(
+        day: str,
+        month: str,
+        year: str,
+    ) -> date:
+        """Parse a user date and use the current year when omitted."""
+
+        parsed_year = int(year) if year else date.today().year
+        month_value = month[:3].title()
+        parsed = datetime.strptime(
+            f"{day} {month_value} {parsed_year}",
+            "%d %b %Y",
+        ).date()
+
+        if not year and parsed < date.today():
+            parsed = parsed.replace(year=parsed.year + 1)
+
+        return parsed
+
+    @staticmethod
     def next_question(draft: TripDraft) -> str:
         """Return the next question for the first missing required field."""
 
@@ -172,8 +279,14 @@ class AskAnita:
             "check_in_date": "What is your check-in date?",
             "check_out_date": "What is your check-out date?",
             "budget": "What budget should I plan within, and which currency?",
-            "travelers": "How many travelers will be going?",
-            "adults": "How many of the travelers are adults?",
+            "travelers": (
+                "How many people will travel? Reply with a number, "
+                "for example: '3 travelers'."
+            ),
+            "adults": (
+                "How many of those travelers are adults? Reply with "
+                "a number, for example: '2 adults'."
+            ),
         }
 
         missing = draft.missing_required_fields()
