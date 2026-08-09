@@ -25,6 +25,8 @@ from src.database.database import get_db, DATABASE_URL
 from src.database.trip_register_repository import TripRegisterRepository
 from src.core.llm_client import LLMClient
 from src.core.langgraph_router import LangGraphTravelRouter
+from src.core.ask_anita import AskAnita
+from src.core.trip_draft import TripDraft
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -47,6 +49,20 @@ if 'trip_data' not in st.session_state:
     st.session_state.trip_data = None
 if 'planning_in_progress' not in st.session_state:
     st.session_state.planning_in_progress = False
+if 'anita_draft' not in st.session_state:
+    st.session_state.anita_draft = TripDraft().model_dump(mode="json")
+if 'anita_messages' not in st.session_state:
+    st.session_state.anita_messages = [
+        {
+            "role": "assistant",
+            "content": (
+                "Hi, I am Anita. I will help collect your trip details. "
+                "Where would you like to travel?"
+            ),
+        }
+    ]
+if 'anita_confirmed' not in st.session_state:
+    st.session_state.anita_confirmed = False
 
 # ==================== DATABASE SETUP ====================
 
@@ -76,7 +92,7 @@ def configure_openai_key() -> None:
 st.sidebar.title("🧭 Navigation")
 page = st.sidebar.radio(
     "Select Page",
-    ["📝 Plan Trip", "📊 Trip Details", "📅 Itinerary", "⚠️ Conflicts", "💰 Budget", "📜 Audit Log"]
+    ["💬 Ask Anita", "📝 Plan Trip", "📊 Trip Details", "📅 Itinerary", "⚠️ Conflicts", "💰 Budget", "📜 Audit Log"]
 )
 
 st.sidebar.markdown("---")
@@ -107,6 +123,8 @@ def main():
     
     if page == "📝 Plan Trip":
         page_plan_trip()
+    elif page == "💬 Ask Anita":
+        page_ask_anita()
     elif page == "📊 Trip Details":
         page_trip_details()
     elif page == "📅 Itinerary":
@@ -117,6 +135,120 @@ def main():
         page_budget()
     elif page == "📜 Audit Log":
         page_audit_log()
+
+
+# ==================== PAGE: PLAN TRIP ====================
+
+def page_ask_anita():
+    """Conversational trip-intake page."""
+
+    st.header("💬 Ask Anita")
+    st.caption(
+        "Tell Anita about your trip. She will collect details and ask "
+        "follow-up questions before anything is created or booked."
+    )
+
+    for message in st.session_state.anita_messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    draft = TripDraft.model_validate(st.session_state.anita_draft)
+
+    with st.sidebar:
+        st.subheader("Trip draft")
+        st.write(
+            f"**Destination:** {draft.destination or 'Missing'}"
+        )
+        st.write(
+            f"**Check-in:** {draft.check_in_date or 'Missing'}"
+        )
+        st.write(
+            f"**Check-out:** {draft.check_out_date or 'Missing'}"
+        )
+        st.write(
+            f"**Budget:** {draft.budget or 'Missing'} "
+            f"{draft.currency}"
+        )
+        st.write(f"**Travelers:** {draft.travelers}")
+
+        if draft.interests:
+            st.write(
+                f"**Interests:** {', '.join(draft.interests)}"
+            )
+        if draft.dietary_restrictions:
+            st.write(
+                "**Dietary:** "
+                f"{', '.join(draft.dietary_restrictions)}"
+            )
+
+    user_message = st.chat_input("Tell Anita about your trip...")
+
+    if user_message:
+        st.session_state.anita_messages.append(
+            {
+                "role": "user",
+                "content": user_message,
+            }
+        )
+
+        try:
+            configure_openai_key()
+            assistant = AskAnita(LLMClient())
+            updated_draft, reply = asyncio.run(
+                assistant.chat(draft, user_message)
+            )
+
+            st.session_state.anita_draft = updated_draft.model_dump(
+                mode="json"
+            )
+            st.session_state.anita_messages.append(
+                {
+                    "role": "assistant",
+                    "content": reply,
+                }
+            )
+            st.rerun()
+
+        except Exception as exc:
+            logger.exception("ANITA_UI_FAILED")
+            st.error(f"Anita could not process that message: {exc}")
+
+    draft = TripDraft.model_validate(st.session_state.anita_draft)
+
+    if draft.is_complete:
+        st.divider()
+        st.subheader("Review your trip details")
+        st.json(draft.model_dump(mode="json"))
+
+        st.warning(
+            "Review these details carefully. No booking has been made."
+        )
+
+        if st.button(
+            "✅ Confirm trip details",
+            type="primary",
+            use_container_width=True,
+        ):
+            st.session_state.anita_confirmed = True
+            st.success(
+                "Trip details confirmed. Recommendation generation "
+                "will be added in the next step."
+            )
+
+    if st.button("🔄 Start a new conversation"):
+        st.session_state.anita_draft = TripDraft().model_dump(
+            mode="json"
+        )
+        st.session_state.anita_messages = [
+            {
+                "role": "assistant",
+                "content": (
+                    "Hi, I am Anita. Where would you like to travel?"
+                ),
+            }
+        ]
+        st.session_state.anita_confirmed = False
+        st.rerun()
 
 
 # ==================== PAGE: PLAN TRIP ====================
