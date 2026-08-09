@@ -116,6 +116,22 @@ class AskAnita:
                     f"{draft.pending_date_field.replace('_', ' ')}."
                 )
 
+        # A duration does not identify calendar dates. Never let the LLM
+        # invent an arrival year or return date from "5 nights".
+        if self._contains_duration_without_dates(user_message):
+            if draft.check_in_date is None:
+                return draft, (
+                    "I can plan that duration, but I still need the "
+                    "arrival/check-in date and return/check-out date. "
+                    "Please provide both dates, including month and year."
+                )
+            if draft.check_out_date is None:
+                return draft, (
+                    "I noted the duration, but I still need your "
+                    "return/check-out date. Please provide the calendar "
+                    "date, including month and year."
+                )
+
         # Count answers are deterministic and must not be delegated to the
         # LLM, because a bare number is otherwise ambiguous.
         count_updates = self._apply_count_answer(
@@ -416,6 +432,26 @@ class AskAnita:
         return any(re.fullmatch(pattern, text) for pattern in patterns)
 
     @staticmethod
+    def _contains_duration_without_dates(user_message: str) -> bool:
+        """Detect duration-only messages such as '5 nights'."""
+
+        text = user_message.strip().lower()
+        has_duration = bool(
+            re.search(r"\b\d+\s*(?:night|nights|day|days)\b", text)
+        )
+        has_calendar_date = bool(
+            re.search(
+                r"\b\d{1,2}(?:st|nd|rd|th)?\s+"
+                r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|"
+                r"apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|"
+                r"sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|"
+                r"dec(?:ember)?)\b",
+                text,
+            )
+        )
+        return has_duration and not has_calendar_date
+
+    @staticmethod
     def _extract_deterministic_fields(
         draft: TripDraft,
         user_message: str,
@@ -643,6 +679,11 @@ user. Do not invent values. Return JSON in this exact shape:
 
 Rules:
 - Preserve any previously collected information.
+- Map arrival/check-in to check_in_date and return/departure to
+  check_out_date.
+- If either calendar date is missing, ask for it, including month and year.
+- If the user provides only a duration such as "5 nights", do not invent
+  dates; ask for the arrival and return calendar dates.
 - Dates must use YYYY-MM-DD.
 - Budget must be numeric.
 - Support any destination worldwide.
