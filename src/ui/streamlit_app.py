@@ -30,6 +30,9 @@ from src.core.llm_client import LLMClient
 from src.core.langgraph_router import LangGraphTravelRouter
 from src.core.ask_anita import AskAnita
 from src.core.trip_draft import TripDraft
+from src.core.hotel_recommendation_state import (
+    HotelRecommendationSession,
+)
 from src.core.runtime_diagnostics import (
     clear_events,
     get_events,
@@ -84,6 +87,14 @@ if 'anita_summary' not in st.session_state:
     st.session_state.anita_summary = None
 if 'anita_summary_hash' not in st.session_state:
     st.session_state.anita_summary_hash = None
+if 'hotel_page_index' not in st.session_state:
+    st.session_state.hotel_page_index = 0
+if 'hotel_selected_segments' not in st.session_state:
+    st.session_state.hotel_selected_segments = {}
+if 'hotel_working_preferences' not in st.session_state:
+    st.session_state.hotel_working_preferences = []
+if 'hotel_recommendation_session' not in st.session_state:
+    st.session_state.hotel_recommendation_session = None
 
 # ==================== DATABASE SETUP ====================
 
@@ -460,6 +471,10 @@ def page_ask_anita():
         st.session_state.anita_trip_id = None
         st.session_state.anita_summary = None
         st.session_state.anita_summary_hash = None
+        st.session_state.hotel_page_index = 0
+        st.session_state.hotel_selected_segments = {}
+        st.session_state.hotel_working_preferences = []
+        st.session_state.hotel_recommendation_session = None
         st.rerun()
 
 
