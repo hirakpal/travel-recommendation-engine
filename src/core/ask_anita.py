@@ -9,6 +9,7 @@ from typing import Any, Dict, Tuple
 from pydantic import BaseModel, Field
 
 from src.core.trip_draft import TripDraft
+from src.core.runtime_diagnostics import record_event
 
 logger = logging.getLogger(__name__)
 logger.info("ANITA_SOURCE_VERSION=DATE_CONFIRMATION_V5")
@@ -59,6 +60,14 @@ class AskAnita:
         logger.info("ANITA_MESSAGE_START")
         logger.info("ANITA_SOURCE_VERSION=DATE_CONFIRMATION_V5")
         logger.info("User message: %s", user_message)
+        record_event(
+            "Ask Anita",
+            "user_message_received",
+            mode="conversation",
+            input_data=user_message,
+            output_data=draft,
+            details={"missing_before": draft.missing_required_fields()},
+        )
 
         normalized_message = user_message.strip().lower()
 
@@ -139,6 +148,17 @@ class AskAnita:
                     draft.pending_preference_field,
                     getattr(updated_draft, draft.pending_preference_field),
                 )
+                record_event(
+                    "Ask Anita",
+                    "preference_captured",
+                    mode="deterministic",
+                    input_data=user_message,
+                    output_data=updated_draft,
+                    details={
+                        "field": draft.pending_preference_field,
+                        "missing_after": updated_draft.missing_required_fields(),
+                    },
+                )
                 return updated_draft, self.next_question(updated_draft)
 
         # A duration does not identify calendar dates. Never let the LLM
@@ -180,7 +200,18 @@ class AskAnita:
         }
         if date_updates and date_keys.intersection(date_updates):
             logger.info("ANITA_DATE_DETERMINISTIC_PATH")
-            return self._apply_local_updates(draft, date_updates)
+            updated_draft, reply = self._apply_local_updates(
+                draft, date_updates
+            )
+            record_event(
+                "Ask Anita",
+                "date_fields_updated",
+                mode="deterministic",
+                input_data=user_message,
+                output_data=updated_draft,
+                details={"updates": date_updates, "reply": reply},
+            )
+            return updated_draft, reply
 
         # Count answers are deterministic and must not be delegated to the
         # LLM, because a bare number is otherwise ambiguous.
@@ -192,6 +223,14 @@ class AskAnita:
         if count_updates:
             updated_draft = draft.merge(count_updates)
             reply = self.next_question(updated_draft)
+            record_event(
+                "Ask Anita",
+                "traveler_counts_updated",
+                mode="deterministic",
+                input_data=user_message,
+                output_data=updated_draft,
+                details={"updates": count_updates, "reply": reply},
+            )
             logger.info("ANITA_COUNT_FIX_VERSION=2")
             logger.info(
                 "ANITA_MESSAGE_SUCCESS complete=%s missing=%s",
@@ -216,14 +255,30 @@ class AskAnita:
             and self._is_deterministic_only(user_message)
         ):
             logger.info("ANITA_DETERMINISTIC_PATH")
-            return self._apply_local_updates(
+            updated_draft, reply = self._apply_local_updates(
                 draft,
                 deterministic_updates,
             )
+            record_event(
+                "Ask Anita",
+                "fields_updated",
+                mode="deterministic",
+                input_data=user_message,
+                output_data=updated_draft,
+                details={"updates": deterministic_updates, "reply": reply},
+            )
+            return updated_draft, reply
 
         prompt = self._build_prompt(draft, user_message)
 
         try:
+            record_event(
+                "Ask Anita",
+                "llm_extraction_start",
+                mode="llm",
+                input_data=user_message,
+                details={"missing_before": draft.missing_required_fields()},
+            )
             response = await self.llm.call(
                 system_prompt=(
                     "You are Anita, a friendly travel-planning intake "
@@ -321,11 +376,31 @@ class AskAnita:
                 updated_draft.is_complete,
                 updated_draft.missing_required_fields(),
             )
+            record_event(
+                "Ask Anita",
+                "llm_extraction_complete",
+                mode="llm",
+                status="success",
+                input_data=user_message,
+                output_data=updated_draft,
+                details={
+                    "llm_updates": extraction.updates,
+                    "reply": reply,
+                    "missing_after": updated_draft.missing_required_fields(),
+                },
+            )
 
             return updated_draft, reply
 
         except Exception:
             logger.exception("ANITA_MESSAGE_FAILED")
+            record_event(
+                "Ask Anita",
+                "message_failed",
+                mode="conversation",
+                status="error",
+                input_data=user_message,
+            )
             raise
 
     @staticmethod
