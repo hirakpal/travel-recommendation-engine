@@ -10,6 +10,7 @@ from src.agents.activities_agent import ActivitiesAgent
 from src.agents.hotel_agent import HotelAgent
 from src.agents.restaurant_agent import RestaurantAgent
 from src.core.intent_parser import IntentParser
+from src.core.hotel_handoff import HotelHandoff
 from src.core.runtime_diagnostics import record_event
 from src.database.trip_register_repository import TripRegisterRepository
 
@@ -40,6 +41,8 @@ class TravelGraphState(TypedDict, total=False):
     conflicts: list
     budget: Dict[str, Any]
     result: Dict[str, Any]
+    hotel_handoff: Dict[str, Any]
+    hotel_missing_fields: list[str]
     error: str
 
 
@@ -61,6 +64,11 @@ class LangGraphTravelRouter:
 
         builder.add_node("parse_intent", self._parse_intent)
         builder.add_node("create_trip", self._create_trip)
+        builder.add_node(
+            "validate_hotel_handoff",
+            self._validate_hotel_handoff,
+        )
+        builder.add_node("handoff_blocked", self._handoff_blocked)
         builder.add_node("hotel", self._run_hotel)
         builder.add_node("activities", self._run_activities)
         builder.add_node("restaurants", self._run_restaurants)
@@ -83,12 +91,22 @@ class LangGraphTravelRouter:
             "create_trip",
             self._route_after_trip,
             {
-                "trip_planning": "hotel",
-                "hotel_search": "hotel",
+                "trip_planning": "validate_hotel_handoff",
+                "hotel_search": "validate_hotel_handoff",
                 "activity_search": "activities",
                 "restaurant_search": "restaurants",
             },
         )
+
+        builder.add_conditional_edges(
+            "validate_hotel_handoff",
+            self._route_after_hotel_handoff,
+            {
+                "hotel": "hotel",
+                "blocked": "handoff_blocked",
+            },
+        )
+        builder.add_edge("handoff_blocked", END)
 
         builder.add_conditional_edges(
             "hotel",
@@ -289,6 +307,89 @@ class LangGraphTravelRouter:
 
     def _route_after_trip(self, state: TravelGraphState) -> RouteName:
         return state.get("route", "trip_planning")
+
+    async def _validate_hotel_handoff(
+        self,
+        state: TravelGraphState,
+    ) -> Dict[str, Any]:
+        """Validate the exact context required by Hotel Agent."""
+
+        trip = state.get("trip")
+        handoff = HotelHandoff(
+            trip_id=state.get("trip_id"),
+            destination=getattr(trip, "destination", None),
+            check_in_date=getattr(trip, "check_in_date", None),
+            check_out_date=getattr(trip, "check_out_date", None),
+            number_of_nights=getattr(trip, "num_nights", None),
+            travelers=getattr(trip, "travelers", None),
+            adults=getattr(trip, "adults", None),
+            budget=getattr(trip, "budget_total", None),
+            currency=getattr(trip, "currency", None),
+            accommodation_preferences=getattr(
+                trip,
+                "accommodation_preferences",
+                None,
+            ),
+        )
+        missing = handoff.missing_fields()
+        logger.info(
+            "HOTEL_HANDOFF_VALIDATION trip_id=%s ready=%s missing=%s",
+            state.get("trip_id"),
+            not missing,
+            missing,
+        )
+        record_event(
+            "Supervisor",
+            "hotel_handoff_validated",
+            mode="deterministic",
+            status="success" if not missing else "blocked",
+            input_data=handoff,
+            output_data={
+                "missing_fields": missing,
+                "ready_for_hotel_agent": not missing,
+            },
+            trip_id=state.get("trip_id"),
+        )
+        return {
+            "hotel_handoff": handoff.as_agent_input(),
+            "hotel_missing_fields": missing,
+        }
+
+    def _route_after_hotel_handoff(
+        self,
+        state: TravelGraphState,
+    ) -> str:
+        """Prevent Hotel Agent execution when the handoff is incomplete."""
+
+        return "blocked" if state.get("hotel_missing_fields") else "hotel"
+
+    async def _handoff_blocked(
+        self,
+        state: TravelGraphState,
+    ) -> Dict[str, Any]:
+        missing = state.get("hotel_missing_fields", [])
+        message = (
+            "Hotel recommendations are waiting for these details: "
+            + ", ".join(missing)
+            + "."
+        )
+        record_event(
+            "Supervisor",
+            "hotel_handoff_blocked",
+            mode="deterministic",
+            status="blocked",
+            output_data={"missing_fields": missing, "message": message},
+            trip_id=state.get("trip_id"),
+        )
+        return {
+            "result": {
+                "success": False,
+                "trip_id": state.get("trip_id"),
+                "missing_fields": missing,
+                "requires_user_input": True,
+                "message": message,
+            }
+        }
 
     async def _run_hotel(self, state: TravelGraphState) -> Dict[str, Any]:
         logger.info(
