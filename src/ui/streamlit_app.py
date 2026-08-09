@@ -34,6 +34,7 @@ from src.core.trip_patch import TripPatch
 from src.core.hotel_recommendation_state import (
     HotelRecommendationSession,
 )
+from src.core.preference_taxonomy import PREFERENCE_OPTIONS
 from src.core.runtime_diagnostics import (
     clear_events,
     get_events,
@@ -267,7 +268,46 @@ def page_ask_anita():
                 f"{', '.join(draft.dietary_restrictions)}"
             )
 
-    user_message = st.chat_input("Tell Anita about your trip...")
+    user_message = None
+    if draft.pending_preference_field:
+        preference_field = draft.pending_preference_field
+        preference_labels = {
+            "interests": "Interests",
+            "dietary_restrictions": "Dietary restrictions",
+            "accessibility_needs": "Accessibility needs",
+            "transport_preferences": "Transport preferences",
+            "accommodation_preferences": "Hotel tier preferences",
+        }
+        st.markdown(
+            f"#### Select {preference_labels.get(preference_field, 'preferences')}"
+        )
+        st.caption(
+            "Choose one or more options, then optionally add your own "
+            "custom requirement."
+        )
+        selected_preferences = st.multiselect(
+            "Preset options",
+            PREFERENCE_OPTIONS.get(preference_field, []),
+            key=f"anita_{preference_field}_presets",
+        )
+        custom_preference = st.text_input(
+            "Custom text (optional)",
+            placeholder="Example: severe allergy or a specific requirement",
+            key=f"anita_{preference_field}_custom",
+        )
+        if st.button(
+            "Submit preferences",
+            type="primary",
+            key=f"submit_{preference_field}",
+        ):
+            preference_values = selected_preferences.copy()
+            if custom_preference.strip():
+                preference_values.append(custom_preference.strip())
+            user_message = ", ".join(preference_values) or "none"
+
+    typed_message = st.chat_input("Tell Anita about your trip...")
+    if typed_message:
+        user_message = typed_message
 
     if user_message:
         st.session_state.anita_messages.append(
