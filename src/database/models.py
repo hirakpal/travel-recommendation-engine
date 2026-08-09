@@ -24,6 +24,8 @@ class Trip(Base):
     check_in_date = Column(Date, nullable=False)
     check_out_date = Column(Date, nullable=False)
     num_nights = Column(Integer)
+    travelers = Column(Integer, nullable=False, default=1)
+    adults = Column(Integer, nullable=False, default=1)
     
     # Budget
     budget_total = Column(Float, nullable=False)
@@ -33,7 +35,10 @@ class Trip(Base):
     interests = Column(JSON)  # [history, culture, food, nature]
     dietary_restrictions = Column(JSON)  # [vegetarian, vegan, gluten-free]
     accessibility_needs = Column(JSON)
+    transport_preferences = Column(JSON)
+    accommodation_preferences = Column(JSON)
     preferences = Column(JSON)
+    notes = Column(Text)
     
     # Status
     status = Column(String, default="planning")  # planning, booked, completed
@@ -291,3 +296,4 @@ class Restaurant(Base):
     image_url = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
