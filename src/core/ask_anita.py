@@ -891,6 +891,7 @@ class AskAnita:
             date_text,
         )
 
+        r"""
         range_match = re.fullmatch(
             r"(?:(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|"
             r"may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|"
@@ -918,43 +919,66 @@ class AskAnita:
                 flags=re.IGNORECASE,
             )
 
+        """
+        range_match = re.fullmatch(
+            r"(.+?)\s*(?:-|to)\s*(.+)",
+            date_text,
+            flags=re.IGNORECASE,
+        )
         if range_match:
-            values = range_match.groups()
-            if values[0].isdigit():
-                start_day, start_month, start_year = values[0], values[1], values[2]
-                end_day, end_month, end_year = values[3], values[4], values[5]
+            endpoint_pattern = (
+                r"(?:(\d{1,2})\s+([a-z]+)|([a-z]+)\s+(\d{1,2}))"
+                r"(?:\s+(\d{4}))?"
+            )
+            left_match = re.fullmatch(
+                endpoint_pattern,
+                range_match.group(1).strip(),
+                flags=re.IGNORECASE,
+            )
+            right_match = re.fullmatch(
+                endpoint_pattern,
+                range_match.group(2).strip(),
+                flags=re.IGNORECASE,
+            )
+            if not left_match or not right_match:
+                range_match = None
             else:
-                start_month, start_day, start_year = values[0], values[1], values[2]
-                end_month, end_day, end_year = values[3], values[4], values[5]
+                left = left_match.groups()
+                right = right_match.groups()
+                start_day = left[0] or left[3]
+                start_month = left[1] or left[2]
+                start_year = left[4]
+                end_day = right[0] or right[3]
+                end_month = right[1] or right[2]
+                end_year = right[4]
+                start_month_number = datetime.strptime(
+                    start_month[:3].title(), "%b"
+                ).month
+                end_month_number = datetime.strptime(
+                    end_month[:3].title(), "%b"
+                ).month
 
-            start_month_number = datetime.strptime(
-                start_month[:3].title(), "%b"
-            ).month
-            end_month_number = datetime.strptime(
-                end_month[:3].title(), "%b"
-            ).month
+                if start_year and end_year:
+                    updates["check_in_date"] = AskAnita._parse_user_date(
+                        start_day, start_month, start_year
+                    )
+                    updates["check_out_date"] = AskAnita._parse_user_date(
+                        end_day, end_month, end_year
+                    )
+                    return updates
 
-            if start_year and end_year:
-                updates["check_in_date"] = AskAnita._parse_user_date(
-                    start_day, start_month, start_year
-                )
-                updates["check_out_date"] = AskAnita._parse_user_date(
-                    end_day, end_month, end_year
+                updates.update(
+                    {
+                        "pending_date_field": "date_range",
+                        "pending_date_range_start_day": int(start_day),
+                        "pending_date_range_start_month": start_month_number,
+                        "pending_date_range_end_day": int(end_day),
+                        "pending_date_range_end_month": end_month_number,
+                        "pending_date_day": None,
+                        "pending_date_month": None,
+                    }
                 )
                 return updates
-
-            updates.update(
-                {
-                    "pending_date_field": "date_range",
-                    "pending_date_range_start_day": int(start_day),
-                    "pending_date_range_start_month": start_month_number,
-                    "pending_date_range_end_day": int(end_day),
-                    "pending_date_range_end_month": end_month_number,
-                    "pending_date_day": None,
-                    "pending_date_month": None,
-                }
-            )
-            return updates
 
         date_matches = re.findall(
             r"\b(\d{1,2})\s+"
