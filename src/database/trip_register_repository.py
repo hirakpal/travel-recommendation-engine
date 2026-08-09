@@ -13,6 +13,10 @@ from src.database.models import (
 )
 
 
+class TripUpdateConflict(RuntimeError):
+    """Raised when an update is based on an outdated register version."""
+
+
 class TripRegisterRepository:
     """Repository for Master Trip Register operations."""
     
@@ -72,6 +76,99 @@ class TripRegisterRepository:
     def get_user_trips(self, user_id: str) -> List[Trip]:
         """Get all trips for user."""
         return self.db.query(Trip).filter(Trip.user_id == user_id).all()
+
+    def update_trip(
+        self,
+        trip_id: str,
+        updates: Dict[str, Any],
+        *,
+        expected_version: Optional[int] = None,
+        agent_name: str = "Ask Anita",
+        reason: str = "User-requested trip update",
+    ) -> Trip:
+        """Safely apply a partial update to an existing trip.
+
+        Unspecified fields are never modified.  The version check prevents a
+        stale conversation from overwriting a newer update.  Any validation,
+        commit, or audit failure rolls the transaction back.
+        """
+
+        allowed_fields = {
+            "destination",
+            "check_in_date",
+            "check_out_date",
+            "budget_total",
+            "currency",
+            "travelers",
+            "adults",
+            "interests",
+            "dietary_restrictions",
+            "accessibility_needs",
+            "transport_preferences",
+            "accommodation_preferences",
+            "notes",
+        }
+        unknown = set(updates) - allowed_fields
+        if unknown:
+            raise ValueError(
+                f"Unsupported trip update fields: {sorted(unknown)}"
+            )
+        if not updates:
+            raise ValueError("Trip update cannot be empty")
+
+        try:
+            query = self.db.query(Trip).filter(Trip.id == trip_id)
+            trip = query.with_for_update().first()
+            if trip is None:
+                raise ValueError(f"Trip not found: {trip_id}")
+
+            current_version = trip.version or 0
+            if (
+                expected_version is not None
+                and current_version != expected_version
+            ):
+                raise TripUpdateConflict(
+                    f"Trip {trip_id} changed from version "
+                    f"{expected_version} to {current_version}. "
+                    "Reload the trip before applying changes."
+                )
+
+            before_state = self._trip_to_dict(trip)
+            candidate = dict(updates)
+
+            for field_name, value in candidate.items():
+                setattr(trip, field_name, value)
+
+            if trip.check_out_date <= trip.check_in_date:
+                raise ValueError(
+                    "Trip check-out must be after check-in"
+                )
+            if trip.adults > trip.travelers:
+                raise ValueError("Adults cannot exceed travelers")
+
+            trip.num_nights = (
+                trip.check_out_date - trip.check_in_date
+            ).days
+            trip.version = current_version + 1
+            trip.updated_at = datetime.utcnow()
+            self.db.flush()
+
+            after_state = self._trip_to_dict(trip)
+            self._log_audit(
+                trip_id,
+                "update",
+                "trip",
+                trip_id,
+                agent_name,
+                before_state=before_state,
+                after_state=after_state,
+            )
+            self.db.commit()
+            self.db.refresh(trip)
+            return trip
+        except Exception:
+            self.db.rollback()
+            raise
     
     def update_trip_status(self, trip_id: str, status: str) -> bool:
         """Update trip status."""
@@ -445,3 +542,29 @@ class TripRegisterRepository:
             "confirmation": booking.confirmation_number
         }
 
+    @staticmethod
+    def _trip_to_dict(trip: Trip) -> Dict[str, Any]:
+        """Serialize register fields for audit before/after snapshots."""
+
+        return {
+            "id": trip.id,
+            "user_id": trip.user_id,
+            "destination": trip.destination,
+            "check_in_date": str(trip.check_in_date),
+            "check_out_date": str(trip.check_out_date),
+            "num_nights": trip.num_nights,
+            "budget_total": trip.budget_total,
+            "currency": trip.currency,
+            "travelers": trip.travelers,
+            "adults": trip.adults,
+            "interests": trip.interests or [],
+            "dietary_restrictions": trip.dietary_restrictions or [],
+            "accessibility_needs": trip.accessibility_needs or [],
+            "transport_preferences": trip.transport_preferences or [],
+            "accommodation_preferences": (
+                trip.accommodation_preferences or []
+            ),
+            "notes": trip.notes,
+            "status": trip.status,
+            "version": trip.version or 0,
+        }
