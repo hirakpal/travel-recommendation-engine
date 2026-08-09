@@ -24,6 +24,21 @@ class TripDraft(BaseModel):
     accommodation_preferences: List[str] = Field(default_factory=list)
     notes: Optional[str] = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_missing_counts(cls, values: Any) -> Any:
+        """Treat LLM placeholder zeros as missing values."""
+
+        if not isinstance(values, dict):
+            return values
+
+        normalized = dict(values)
+        for field_name in ("travelers", "adults"):
+            if normalized.get(field_name) == 0:
+                normalized[field_name] = None
+
+        return normalized
+
     @model_validator(mode="after")
     def validate_date_order(self) -> "TripDraft":
         if (
