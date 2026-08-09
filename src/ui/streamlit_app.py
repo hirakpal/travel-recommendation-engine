@@ -5,6 +5,7 @@ Shows real-time trip planning with all agents, budget tracking, and conflict det
 
 import streamlit as st
 import pandas as pd
+import json
 from datetime import datetime, date, timedelta
 from typing import Dict, Any, List
 import asyncio
@@ -35,7 +36,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 ANITA_RUNTIME_FILE = inspect.getfile(AskAnita)
 ANITA_RUNTIME_HASH = hashlib.sha256(
-    inspect.getsource(AskAnita.chat).encode("utf-8")
+    inspect.getsource(sys.modules[AskAnita.__module__]).encode("utf-8")
 ).hexdigest()[:12]
 logger.info("STREAMLIT_ENTRYPOINT_FILE=%s", __file__)
 logger.info("ANITA_RUNTIME_FILE=%s", ANITA_RUNTIME_FILE)
@@ -72,6 +73,10 @@ if 'anita_messages' not in st.session_state:
     ]
 if 'anita_confirmed' not in st.session_state:
     st.session_state.anita_confirmed = False
+if 'anita_summary' not in st.session_state:
+    st.session_state.anita_summary = None
+if 'anita_summary_hash' not in st.session_state:
+    st.session_state.anita_summary_hash = None
 
 # ==================== DATABASE SETUP ====================
 
@@ -95,6 +100,45 @@ def configure_openai_key() -> None:
 
     if secret_key:
         os.environ["OPENAI_API_KEY"] = str(secret_key)
+
+
+def generate_trip_summary(draft: TripDraft) -> str:
+    """Generate a concise summary from the validated draft."""
+
+    payload = draft.model_dump(
+        mode="json",
+        exclude={
+            "pending_date_field",
+            "pending_date_day",
+            "pending_date_month",
+            "pending_preference_field",
+            "preferences_collected",
+            "date_confirmation_required",
+        },
+    )
+    prompt = (
+        "Create a warm, concise travel-planning summary from this validated "
+        "trip draft:\n\n"
+        f"{json.dumps(payload, indent=2)}\n\n"
+        "Mention destination, dates, nights, travelers and adults, budget "
+        "and currency, interests, dietary needs, accessibility, transport, "
+        "and accommodation preferences. Do not invent information or claim "
+        "that anything has been booked. Use two short paragraphs and a "
+        "short Next step sentence asking the user to confirm."
+    )
+    response = asyncio.run(
+        LLMClient().call(
+            system_prompt=(
+                "You are Anita, a precise and friendly travel assistant. "
+                "Summarize only validated user-provided information."
+            ),
+            user_message=prompt,
+            response_format="text",
+            temperature=0.3,
+            max_tokens=350,
+        )
+    )
+    return response.strip()
 
 # ==================== SIDEBAR: NAVIGATION ====================
 
@@ -244,7 +288,67 @@ def page_ask_anita():
     if draft.is_complete:
         st.divider()
         st.subheader("Review your trip details")
-        st.json(draft.model_dump(mode="json"))
+
+        summary_payload = draft.model_dump(mode="json")
+        summary_hash = hashlib.sha256(
+            json.dumps(
+                summary_payload,
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
+
+        if st.session_state.anita_summary_hash != summary_hash:
+            try:
+                configure_openai_key()
+                st.session_state.anita_summary = generate_trip_summary(draft)
+            except Exception:
+                logger.exception("ANITA_SUMMARY_FAILED")
+                st.session_state.anita_summary = (
+                    f"You are planning {draft.number_of_nights} nights in "
+                    f"{draft.destination}, from {draft.check_in_date} to "
+                    f"{draft.check_out_date}, for {draft.travelers} "
+                    f"travelers ({draft.adults} adults). Your budget is "
+                    f"{draft.budget:,.2f} {draft.currency}."
+                )
+            st.session_state.anita_summary_hash = summary_hash
+
+        st.info(st.session_state.anita_summary)
+
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Destination", draft.destination)
+        with col2:
+            st.metric("Nights", draft.number_of_nights)
+        with col3:
+            st.metric("Travelers", draft.travelers)
+        with col4:
+            st.metric(
+                "Budget",
+                f"{draft.budget:,.0f} {draft.currency}",
+            )
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Dates**")
+            st.write(f"Arrival: {draft.check_in_date}")
+            st.write(f"Return: {draft.check_out_date}")
+            st.markdown("**Traveler profile**")
+            st.write(f"{draft.adults} adults, {draft.travelers - draft.adults} children")
+
+        with col2:
+            st.markdown("**Preferences**")
+            preference_rows = {
+                "Interests": draft.interests,
+                "Dietary": draft.dietary_restrictions,
+                "Accessibility": draft.accessibility_needs,
+                "Transport": draft.transport_preferences,
+                "Accommodation": draft.accommodation_preferences,
+            }
+            for label, values in preference_rows.items():
+                st.write(f"**{label}:** {', '.join(values) if values else 'None specified'}")
+
+        with st.expander("View raw draft data"):
+            st.json(summary_payload)
 
         st.warning(
             "Review these details carefully. No booking has been made."
@@ -274,6 +378,8 @@ def page_ask_anita():
             }
         ]
         st.session_state.anita_confirmed = False
+        st.session_state.anita_summary = None
+        st.session_state.anita_summary_hash = None
         st.rerun()
 
 
