@@ -899,7 +899,7 @@ class AskAnita:
             r"(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|"
             r"may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|"
             r"oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})"
-            r"(?:\s+(\d{4}))?",
+            r"(?:\s+(\d{4}))?)",
             date_text,
             flags=re.IGNORECASE,
         )
